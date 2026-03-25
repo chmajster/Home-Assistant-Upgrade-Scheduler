@@ -172,10 +172,35 @@ class AutoUpgradeService:
         except Exception:
             self.logger.exception("Failed to fire lifecycle event %s", event)
 
+    def _schedule_signature(self) -> str:
+        return json.dumps(
+            {
+                "check_interval_minutes": self.config.check_interval_minutes,
+                "install_days": list(self.config.install_days),
+                "install_hour": self.config.install_hour,
+                "schedule_check_cron": self.config.schedule_check_cron,
+                "schedule_install_cron": self.config.schedule_install_cron,
+                "schedule_check_weekday_time": self.config.schedule_check_weekday_time,
+                "schedule_install_weekday_time": self.config.schedule_install_weekday_time,
+                "schedule_jitter_seconds": self.config.schedule_jitter_seconds,
+            },
+            sort_keys=True,
+        )
+
     def _refresh_schedule(self) -> None:
         state = self.state_store.read()
+        signature = self._schedule_signature()
+        if state.get("schedule_signature") != signature:
+            self.logger.info("Schedule configuration changed, recalculating next runs")
+            self.state_store.set_next_runs(
+                to_iso(self.scheduler.compute_next("check")),
+                to_iso(self.scheduler.compute_next("install")),
+            )
+            self.state_store.set_schedule_signature(signature)
+            return
         schedule = self.scheduler.ensure_schedule(state)
         self.state_store.set_next_runs(to_iso(schedule.next_check), to_iso(schedule.next_install))
+        self.state_store.set_schedule_signature(signature)
 
     def _advance_install_schedule(self) -> None:
         state = self.state_store.read()
@@ -365,7 +390,7 @@ class AutoUpgradeService:
             snapshot=snapshot,
             entity_states=entity_states,
             now=utc_now(),
-            mode="install",
+            mode="scheduled_install" if trigger == "schedule" else "manual_install",
         )
         if runtime_reasons or not decision.allowed:
             reasons = runtime_reasons + decision.reasons

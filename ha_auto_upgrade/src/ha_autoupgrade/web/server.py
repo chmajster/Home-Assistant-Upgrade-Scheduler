@@ -96,6 +96,8 @@ class DashboardServer:
         safe_mode_until = state.get("safe_mode_until") or "off"
         last_backup = state.get("last_backup") or "n/a"
         next_install = state.get("next_install") or "n/a"
+        install_days = status.get("config", {}).get("install_days", "sun")
+        install_hour = status.get("config", {}).get("install_hour", "03:00")
 
         return f"""<!doctype html>
 <html lang="{escape(language)}">
@@ -118,7 +120,7 @@ class DashboardServer:
         <div class="hero-actions">
           <button onclick="postAction('/api/actions/check')">{escape(ui['check_now'])}</button>
           <button class="accent" onclick="postAction('/api/actions/update')">{escape(ui['update_now'])}</button>
-          <button onclick="postAction('/api/actions/check-install')">{escape(ui['check_install_now'])}</button>
+          <button class="accent" onclick="postAction('/api/actions/check-install')">{escape(ui['check_install_now'])}</button>
         </div>
       </section>
       <section class="card-grid">
@@ -135,6 +137,7 @@ class DashboardServer:
         <article class="card metric-card">
           <p class="metric-label">{escape(ui['next_install'])}</p>
           <h2>{escape(str(next_install))}</h2>
+          <p>{escape(ui['install_schedule'])}: {escape(f"{install_days} @ {install_hour}")}</p>
           <p>{escape(ui['safe_mode'])}: {escape(str(safe_mode_until))}</p>
         </article>
         <article class="card metric-card">

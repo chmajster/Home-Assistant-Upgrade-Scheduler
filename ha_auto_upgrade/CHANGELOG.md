@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.5
+
+- added visible add-on options for automatic install weekdays and install hour
+- scheduled install runs now use the selected weekday set and time instead of only the generic interval
+- manual `check updates and install` runs bypass automatic maintenance-window/day gating
+- added dashboard schedule summary and kept the combined check-and-install button visible
+
 ## 1.0.4
 
 - added richer operational logging for checks, plans, backups, installs, and summaries

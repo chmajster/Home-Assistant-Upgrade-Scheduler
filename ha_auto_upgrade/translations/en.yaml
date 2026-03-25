@@ -4,6 +4,12 @@ configuration:
   check_interval_minutes:
     name: Check interval in minutes
     description: How often the add-on checks for updates.
+  install_days:
+    name: Install days
+    description: Comma-separated days for automatic install attempts, for example mon,wed,fri or sun.
+  install_hour:
+    name: Install hour
+    description: Time for automatic install attempts in HH:MM format, for example 03:00.
   auto_install:
     name: Install automatically
     description: If enabled, scheduled checks can also install updates automatically.
@@ -114,7 +120,7 @@ ui:
   subtitle: Policy-driven updates, safety gates, backups, diagnostics, and a lightweight local dashboard.
   check_now: Check now
   update_now: Update now
-  check_install_now: Check and install now
+  check_install_now: Check updates and install
   update_core_now: Install Core
   update_supervisor_now: Install Supervisor
   update_os_now: Install OS
@@ -131,6 +137,7 @@ ui:
   pending_updates: Pending updates
   last_check: Last check
   next_install: Next install
+  install_schedule: Install schedule
   last_backup: Last backup
   last_result: Last result
   audit_trail: Audit trail

@@ -43,7 +43,10 @@ class PolicyEngine:
         if snapshot.ha_state not in {"running", "startup"}:
             reasons.append(f"Home Assistant state is not suitable for updates ({snapshot.ha_state})")
 
-        if not within_time_window(now.astimezone(), self.config.maintenance_window):
+        if mode == "scheduled_install" and not within_time_window(
+            now.astimezone(),
+            self.config.maintenance_window,
+        ):
             reasons.append("Current time is outside the configured maintenance window")
 
         blackout = blackout_match(now.astimezone(), self.config.blackout_dates)
@@ -51,7 +54,7 @@ class PolicyEngine:
             reasons.append(f"Blackout date is active ({blackout})")
 
         weekday = now.astimezone().strftime("%a").lower()[:3]
-        if weekday not in self.config.schedule_allowed_weekdays:
+        if mode == "scheduled_install" and weekday not in self.config.schedule_allowed_weekdays:
             reasons.append(f"Weekday {weekday} is not allowed by policy")
 
         if self.config.approval_entity:

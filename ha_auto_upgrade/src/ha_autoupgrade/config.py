@@ -6,7 +6,9 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
+import re
 from typing import Any
+import unicodedata
 
 from ha_autoupgrade.constants import (
     CONFIG_SECRET_KEYS,
@@ -15,6 +17,7 @@ from ha_autoupgrade.constants import (
     OVERRIDE_OPTIONS_FILE,
 )
 from ha_autoupgrade.models import ActionCall
+from ha_autoupgrade.utils.dates import parse_hhmm
 from ha_autoupgrade.utils.versioning import parse_mapping_entries
 
 VALID_UPDATE_STRATEGIES = {"addons_last", "addons_first", "core_first"}
@@ -22,6 +25,38 @@ VALID_BACKUP_MODES = {"full", "partial"}
 VALID_LOG_LEVELS = {"debug", "info", "warning", "error"}
 VALID_WEEKDAYS = set(DEFAULT_WEEKDAYS)
 VALID_UPDATE_TYPES = {"core", "supervisor", "os", "addons"}
+WEEKDAY_ALIASES = {
+    "mon": "mon",
+    "monday": "mon",
+    "pon": "mon",
+    "poniedzialek": "mon",
+    "tue": "tue",
+    "tuesday": "tue",
+    "wt": "tue",
+    "wtorek": "tue",
+    "wed": "wed",
+    "wednesday": "wed",
+    "sr": "wed",
+    "sroda": "wed",
+    "thu": "thu",
+    "thursday": "thu",
+    "czw": "thu",
+    "czwartek": "thu",
+    "fri": "fri",
+    "friday": "fri",
+    "pt": "fri",
+    "piatek": "fri",
+    "sat": "sat",
+    "saturday": "sat",
+    "sob": "sat",
+    "sobota": "sat",
+    "sun": "sun",
+    "sunday": "sun",
+    "nd": "sun",
+    "ndz": "sun",
+    "niedziela": "sun",
+}
+ALL_DAYS_TOKENS = {"all", "daily", "everyday", "codziennie", "wszystkie"}
 
 
 class ConfigError(ValueError):
@@ -30,6 +65,8 @@ class ConfigError(ValueError):
 
 DEFAULT_OPTIONS: dict[str, Any] = {
     "check_interval_minutes": 60,
+    "install_days": "sun",
+    "install_hour": "03:00",
     "auto_install": False,
     "create_backup": True,
     "log_level": "info",
@@ -113,6 +150,51 @@ DEFAULT_OPTIONS: dict[str, Any] = {
 }
 
 
+def _ascii_fold(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.strip().lower())
+    return normalized.encode("ascii", "ignore").decode("ascii")
+
+
+def _parse_install_days(value: Any, field_name: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple, set)):
+        raw_tokens = [str(item) for item in value]
+    else:
+        raw_tokens = re.split(r"[\s,;]+", str(value).strip())
+    normalized_days: list[str] = []
+    for token in raw_tokens:
+        folded = _ascii_fold(token)
+        if not folded:
+            continue
+        if folded in ALL_DAYS_TOKENS:
+            return tuple(DEFAULT_WEEKDAYS)
+        weekday = WEEKDAY_ALIASES.get(folded)
+        if weekday is None:
+            raise ConfigError(f"Unsupported weekday in {field_name}: {token}")
+        if weekday not in normalized_days:
+            normalized_days.append(weekday)
+    return tuple(normalized_days)
+
+
+def _normalize_install_hour(value: Any, field_name: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    parsed = parse_hhmm(raw)
+    return f"{parsed.hour:02d}:{parsed.minute:02d}"
+
+
+def _split_legacy_weekday_time(value: str) -> tuple[str, str]:
+    weekday, separator, hour = value.partition("@")
+    if not separator:
+        raise ConfigError(f"Invalid legacy weekday/time value: {value}")
+    weekdays = _parse_install_days(weekday, "schedule_install_weekday_time")
+    if len(weekdays) != 1:
+        raise ConfigError("schedule_install_weekday_time must contain exactly one weekday")
+    return weekdays[0], _normalize_install_hour(hour, "schedule_install_weekday_time")
+
+
 def _parse_action_call(value: str) -> ActionCall:
     service, separator, raw_data = value.partition("|")
     service = service.strip()
@@ -134,6 +216,8 @@ class AppConfig:
     raw_options: dict[str, Any]
     data_dir: Path = DATA_DIR
     check_interval_minutes: int = 60
+    install_days: tuple[str, ...] = field(default_factory=lambda: ("sun",))
+    install_hour: str = "03:00"
     auto_install: bool = False
     create_backup: bool = True
     log_level: str = "info"
@@ -222,6 +306,21 @@ class AppConfig:
         merged = deepcopy(DEFAULT_OPTIONS)
         merged.update(user_options)
 
+        install_days_input = user_options.get("install_days", merged["install_days"])
+        install_hour_input = user_options.get("install_hour", merged["install_hour"])
+        legacy_schedule_input = str(
+            user_options.get("schedule_install_weekday_time", merged["schedule_install_weekday_time"]) or ""
+        ).strip()
+        if "install_days" not in user_options and "install_hour" not in user_options and legacy_schedule_input:
+            install_days_input, install_hour_input = _split_legacy_weekday_time(legacy_schedule_input)
+
+        install_days = _parse_install_days(install_days_input, "install_days")
+        install_hour = _normalize_install_hour(install_hour_input, "install_hour")
+        if not install_days:
+            install_days = _parse_install_days(DEFAULT_OPTIONS["install_days"], "install_days")
+        if not install_hour:
+            install_hour = _normalize_install_hour(DEFAULT_OPTIONS["install_hour"], "install_hour")
+
         log_level = str(merged["log_level"]).lower()
         if log_level not in VALID_LOG_LEVELS:
             raise ConfigError(f"Unsupported log level: {log_level}")
@@ -238,9 +337,23 @@ class AppConfig:
         if backup_mode not in VALID_BACKUP_MODES:
             raise ConfigError(f"Unsupported backup_mode: {backup_mode}")
 
-        allowed_weekdays = {entry.lower() for entry in merged["schedule_allowed_weekdays"]}
+        if "schedule_allowed_weekdays" in user_options:
+            allowed_weekdays = set(
+                _parse_install_days(merged["schedule_allowed_weekdays"], "schedule_allowed_weekdays")
+            )
+        elif install_days:
+            allowed_weekdays = set(install_days)
+        else:
+            allowed_weekdays = set(DEFAULT_WEEKDAYS)
         if not allowed_weekdays.issubset(VALID_WEEKDAYS):
             raise ConfigError("schedule_allowed_weekdays contains unsupported values")
+
+        merged["install_days"] = ",".join(install_days) if install_days else ""
+        merged["install_hour"] = install_hour
+        merged["schedule_allowed_weekdays"] = list(allowed_weekdays)
+        merged["schedule_install_weekday_time"] = (
+            f"{install_days[0]}@{install_hour}" if len(install_days) == 1 and install_hour else ""
+        )
 
         rollout_percent = int(merged["staged_rollout_percent"])
         if rollout_percent < 0 or rollout_percent > 100:
@@ -257,6 +370,8 @@ class AppConfig:
             raw_options=merged,
             data_dir=data_dir,
             check_interval_minutes=int(merged["check_interval_minutes"]),
+            install_days=install_days or tuple(DEFAULT_WEEKDAYS),
+            install_hour=install_hour or DEFAULT_OPTIONS["install_hour"],
             auto_install=bool(merged["auto_install"]),
             create_backup=bool(merged["create_backup"]),
             log_level=log_level,
@@ -282,8 +397,12 @@ class AppConfig:
             backup_retention=int(merged["backup_retention"]),
             backup_partial_addons=list(merged["backup_partial_addons"]),
             rollback_on_failure=bool(merged["rollback_on_failure"]),
-            schedule_check_interval_minutes=int(merged["check_interval_minutes"]),
-            schedule_install_interval_minutes=int(merged["check_interval_minutes"]),
+            schedule_check_interval_minutes=int(
+                user_options.get("schedule_check_interval_minutes", merged["check_interval_minutes"])
+            ),
+            schedule_install_interval_minutes=int(
+                user_options.get("schedule_install_interval_minutes", merged["check_interval_minutes"])
+            ),
             schedule_check_cron=str(merged["schedule_check_cron"] or ""),
             schedule_install_cron=str(merged["schedule_install_cron"] or ""),
             schedule_check_weekday_time=str(merged["schedule_check_weekday_time"] or ""),
@@ -364,6 +483,8 @@ class AppConfig:
                 raise ConfigError(f"{name} must be >= 0")
         if self.check_interval_minutes <= 0:
             raise ConfigError("check_interval_minutes must be > 0")
+        if self.install_days and not self.install_hour:
+            raise ConfigError("install_hour must be set when install_days are configured")
         if self.smtp_enabled and (not self.smtp_host or not self.smtp_from or not self.smtp_to):
             raise ConfigError("SMTP is enabled but smtp_host/smtp_from/smtp_to are incomplete")
 
@@ -392,7 +513,7 @@ class AppConfig:
 
 def load_config(data_dir: Path = DATA_DIR) -> AppConfig:
     options_path = data_dir / "options.json"
-    payload = deepcopy(DEFAULT_OPTIONS)
+    payload: dict[str, Any] = {}
     if options_path.exists():
         payload.update(json.loads(options_path.read_text(encoding="utf-8")))
     if OVERRIDE_OPTIONS_FILE.exists():

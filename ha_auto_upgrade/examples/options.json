@@ -1,5 +1,7 @@
 {
   "check_interval_minutes": 60,
+  "install_days": "sun",
+  "install_hour": "03:00",
   "auto_install": false,
   "create_backup": true
 }

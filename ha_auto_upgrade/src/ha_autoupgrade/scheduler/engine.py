@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from ha_autoupgrade.config import AppConfig
-from ha_autoupgrade.scheduler.triggers import CronTrigger, IntervalTrigger, Trigger, WeekdayTimeTrigger
+from ha_autoupgrade.scheduler.triggers import (
+    CronTrigger,
+    IntervalTrigger,
+    Trigger,
+    WeekdaySetTimeTrigger,
+    WeekdayTimeTrigger,
+)
 from ha_autoupgrade.utils.dates import parse_iso_datetime, utc_now
 
 
@@ -30,6 +36,8 @@ class SchedulerEngine:
 
         if self.config.schedule_install_cron:
             return CronTrigger(self.config.schedule_install_cron)
+        if self.config.install_days and self.config.install_hour:
+            return WeekdaySetTimeTrigger(self.config.install_days, self.config.install_hour)
         if self.config.schedule_install_weekday_time:
             return WeekdayTimeTrigger(self.config.schedule_install_weekday_time)
         return IntervalTrigger(self.config.schedule_install_interval_minutes)

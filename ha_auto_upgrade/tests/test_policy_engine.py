@@ -68,3 +68,36 @@ def test_run_policy_blocks_presence_and_bad_resources() -> None:
     assert any("someone is home" in reason for reason in decision.reasons)
     assert any("Approval entity" in reason for reason in decision.reasons)
     assert any("Free disk below threshold" in reason for reason in decision.reasons)
+
+
+def test_manual_install_bypasses_schedule_day_and_maintenance_window() -> None:
+    config = AppConfig.from_dict(
+        {
+            "install_days": "sun",
+            "install_hour": "03:00",
+            "maintenance_window": "22:00-06:00",
+        }
+    )
+    engine = PolicyEngine(config, logging.getLogger("test"))
+    snapshot = SystemSnapshot(
+        free_disk_mb=4096,
+        load_1m=0.5,
+        free_memory_mb=1024,
+        network_ok=True,
+        api_ok=True,
+        ha_state="running",
+        supervisor_state="running",
+    )
+    now = datetime(2026, 3, 25, 12, 0, tzinfo=UTC)
+
+    manual = engine.evaluate_run(snapshot=snapshot, entity_states={}, now=now, mode="manual_install")
+    scheduled = engine.evaluate_run(
+        snapshot=snapshot,
+        entity_states={},
+        now=now,
+        mode="scheduled_install",
+    )
+
+    assert manual.allowed is True
+    assert scheduled.allowed is False
+    assert any("maintenance window" in reason or "not allowed by policy" in reason for reason in scheduled.reasons)

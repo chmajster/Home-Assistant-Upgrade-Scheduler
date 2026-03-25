@@ -4,6 +4,12 @@ configuration:
   check_interval_minutes:
     name: Interwal sprawdzania w minutach
     description: Jak czesto dodatek ma sprawdzac dostepne aktualizacje.
+  install_days:
+    name: Dni instalacji
+    description: Dni tygodnia dla automatycznej instalacji, oddzielone przecinkami, na przyklad pon,sr,pt albo sun.
+  install_hour:
+    name: Godzina instalacji
+    description: Godzina automatycznej instalacji w formacie HH:MM, na przyklad 03:00.
   auto_install:
     name: Instaluj automatycznie
     description: Jesli wlaczone, zaplanowane sprawdzenia moga tez automatycznie instalowac aktualizacje.
@@ -114,7 +120,7 @@ ui:
   subtitle: Aktualizacje sterowane politykami, bramki bezpieczenstwa, kopie zapasowe, diagnostyka i lekki lokalny panel.
   check_now: Sprawdz teraz
   update_now: Aktualizuj teraz
-  check_install_now: Sprawdz i zainstaluj
+  check_install_now: Sprawdz aktualizacje i zainstaluj
   update_core_now: Instaluj Core
   update_supervisor_now: Instaluj Supervisor
   update_os_now: Instaluj OS
@@ -131,6 +137,7 @@ ui:
   pending_updates: Oczekujace aktualizacje
   last_check: Ostatnie sprawdzenie
   next_install: Nastepna instalacja
+  install_schedule: Harmonogram instalacji
   last_backup: Ostatnia kopia
   last_result: Ostatni wynik
   audit_trail: Slad audytowy

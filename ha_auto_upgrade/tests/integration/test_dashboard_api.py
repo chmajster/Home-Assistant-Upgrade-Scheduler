@@ -85,6 +85,19 @@ def test_dashboard_check_install_action_is_available() -> None:
     assert service.queued == [("check_install", "dashboard", None)]
 
 
+def test_dashboard_homepage_contains_check_install_button() -> None:
+    server = DashboardServer(StubService())
+
+    response = server.handle_request(
+        method="GET",
+        raw_path="/",
+        remote_addr="127.0.0.1",
+    )
+
+    assert response[0] == 200
+    assert b"/api/actions/check-install" in response[2]
+
+
 def test_dashboard_scoped_install_action_is_available() -> None:
     service = StubService()
     server = DashboardServer(service)

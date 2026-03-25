@@ -111,6 +111,10 @@ The add-on configuration exposed in Home Assistant is intentionally minimal:
 
 - `check_interval_minutes`
   - how often the add-on checks for updates
+- `install_days`
+  - comma-separated days for automatic install attempts, for example `sun` or `mon,wed,fri`
+- `install_hour`
+  - automatic install time in `HH:MM` format
 - `auto_install`
   - if enabled, scheduled checks can also trigger scheduled installs
 - `create_backup`
@@ -120,15 +124,19 @@ Advanced safety and policy controls still exist in the code with safe defaults, 
 
 ## Scheduling
 
-The visible configuration uses one interval:
+The visible configuration uses one interval and one install window:
 
 - `check_interval_minutes`
+- `install_days`
+- `install_hour`
 
-That interval controls scheduled update checks.
+`check_interval_minutes` controls scheduled update checks.
 
-If `auto_install` is enabled, the same interval is also used for scheduled install attempts.
+If `auto_install` is enabled, scheduled install attempts run on the selected weekday set at the selected hour.
 
-Manual actions from the dashboard remain available regardless of the scheduler settings.
+Accepted day values include English shortcuts such as `mon,tue,fri` and Polish shortcuts such as `pon,sr,pt`.
+
+Manual actions from the dashboard remain available regardless of the automatic install schedule.
 
 ## Web UI and API
 
@@ -145,7 +153,7 @@ The ingress dashboard shows:
 Manual actions:
 
 - check now
-- check and install now
+- check updates and install
 - update now
 - install only Core
 - install only Supervisor

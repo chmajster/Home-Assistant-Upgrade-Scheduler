@@ -7,7 +7,7 @@ It runs as a local container application with:
 - Supervisor API integration for Core, Supervisor, OS, and add-ons
 - pre-flight safety checks
 - optional backups and rollback request flow
-- internal scheduling
+- internal scheduling with selectable install days and hour
 - local ingress dashboard and status API
 - persistent audit history in `/data`
 

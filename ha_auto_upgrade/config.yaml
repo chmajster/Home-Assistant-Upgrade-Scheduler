@@ -1,5 +1,5 @@
 name: HA AutoUpgrade
-version: 1.0.4
+version: 1.0.5
 slug: ha_auto_upgrade
 description: Intelligent, policy-driven, safety-first update automation for Home Assistant
 url: https://github.com/Chris/Home-Assistant-Upgrade-Scheduler
@@ -30,9 +30,13 @@ ports_description:
   8099/tcp: Local status API (optional, ingress preferred)
 options:
   check_interval_minutes: 60
+  install_days: sun
+  install_hour: "03:00"
   auto_install: false
   create_backup: true
 schema:
   check_interval_minutes: int
+  install_days: str
+  install_hour: str
   auto_install: bool
   create_backup: bool

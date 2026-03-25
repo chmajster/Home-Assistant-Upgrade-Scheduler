@@ -24,8 +24,8 @@ def test_interval_schedule_computes_future_run() -> None:
 def test_weekday_schedule_resolves_next_target() -> None:
     config = AppConfig.from_dict(
         {
-            "schedule_install_interval_minutes": 300,
-            "schedule_install_weekday_time": "sun@03:00",
+            "install_days": "fri,sun",
+            "install_hour": "03:00",
             "schedule_jitter_seconds": 0,
         }
     )
@@ -34,4 +34,4 @@ def test_weekday_schedule_resolves_next_target() -> None:
 
     next_run = scheduler.compute_next("install", now)
 
-    assert next_run == datetime(2026, 3, 29, 3, 0, tzinfo=UTC)
+    assert next_run == datetime(2026, 3, 27, 3, 0, tzinfo=UTC)

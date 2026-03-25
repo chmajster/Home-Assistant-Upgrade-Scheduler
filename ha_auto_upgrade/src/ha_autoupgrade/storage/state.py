@@ -27,6 +27,7 @@ def _default_state() -> dict[str, Any]:
         "cooldown_until": None,
         "retry_queue": [],
         "last_self_test": None,
+        "schedule_signature": "",
     }
 
 
@@ -91,6 +92,9 @@ class StateStore:
                 }
             )
         )
+
+    def set_schedule_signature(self, signature: str) -> None:
+        self.update(lambda state: state.update({"schedule_signature": signature}))
 
     def record_check(
         self,
