@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.8
+
+- fixed startup crash when legacy saved options contain wildcard values such as `install_hour: "*"`
+- added safe fallback handling for wildcard/default values in the simplified install schedule settings
+
 ## 1.0.7
 
 - version bump from 1.0.6 to 1.0.7

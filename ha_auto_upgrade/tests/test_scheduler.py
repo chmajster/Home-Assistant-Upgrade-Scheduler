@@ -35,3 +35,15 @@ def test_weekday_schedule_resolves_next_target() -> None:
     next_run = scheduler.compute_next("install", now)
 
     assert next_run == datetime(2026, 3, 27, 3, 0, tzinfo=UTC)
+
+
+def test_legacy_wildcard_schedule_values_fall_back_to_defaults() -> None:
+    config = AppConfig.from_dict(
+        {
+            "install_days": "*",
+            "install_hour": "*",
+        }
+    )
+
+    assert config.install_days == ("sun",)
+    assert config.install_hour == "03:00"

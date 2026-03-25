@@ -57,6 +57,7 @@ WEEKDAY_ALIASES = {
     "niedziela": "sun",
 }
 ALL_DAYS_TOKENS = {"all", "daily", "everyday", "codziennie", "wszystkie"}
+DEFAULT_FALLBACK_TOKENS = {"*", "default", "auto"}
 
 
 class ConfigError(ValueError):
@@ -167,6 +168,8 @@ def _parse_install_days(value: Any, field_name: str) -> tuple[str, ...]:
         folded = _ascii_fold(token)
         if not folded:
             continue
+        if folded in DEFAULT_FALLBACK_TOKENS:
+            return ()
         if folded in ALL_DAYS_TOKENS:
             return tuple(DEFAULT_WEEKDAYS)
         weekday = WEEKDAY_ALIASES.get(folded)
@@ -179,13 +182,15 @@ def _parse_install_days(value: Any, field_name: str) -> tuple[str, ...]:
 
 def _normalize_install_hour(value: Any, field_name: str) -> str:
     raw = str(value or "").strip()
-    if not raw:
+    if not raw or _ascii_fold(raw) in DEFAULT_FALLBACK_TOKENS:
         return ""
     parsed = parse_hhmm(raw)
     return f"{parsed.hour:02d}:{parsed.minute:02d}"
 
 
 def _split_legacy_weekday_time(value: str) -> tuple[str, str]:
+    if _ascii_fold(value) in DEFAULT_FALLBACK_TOKENS:
+        return "", ""
     weekday, separator, hour = value.partition("@")
     if not separator:
         raise ConfigError(f"Invalid legacy weekday/time value: {value}")
