@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.7
+
+- version bump from 1.0.6 to 1.0.7
+
+## 1.0.6
+
+- fixed add-on startup permissions by allowing `/init`, S6, Bashio, and Python runtime paths in the custom AppArmor profile
+- kept the add-on in the official Supervisor container model instead of disabling the add-on runtime structure
+
 ## 1.0.5
 
 - added visible add-on options for automatic install weekdays and install hour
