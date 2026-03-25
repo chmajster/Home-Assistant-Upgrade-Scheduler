@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- maintenance release
+- bumped add-on version from 1.0.0 to 1.0.1
+
 ## 1.0.0
 
 - initial production-oriented release of HA AutoUpgrade

@@ -7,7 +7,7 @@ from pathlib import Path
 
 APP_NAME = "HA AutoUpgrade"
 APP_SLUG = "ha_auto_upgrade"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 STATE_SCHEMA_VERSION = 1
 HISTORY_RETENTION = 1000
 RECENT_LOG_BUFFER_SIZE = 250
