@@ -170,8 +170,10 @@ class Updater:
                 "Rollback requested but no backup manager or backup slug available."
             )
             return
-        logger.warning("Update failures detected; attempting rollback to backup %s…",
-                       report.backup_slug)
+        logger.warning(
+            "Update failures detected; attempting rollback to backup %s…",
+            report.backup_slug,
+        )
         ok = self._backup_manager.restore_backup(report.backup_slug)
         report.rolled_back = ok
         if ok:
