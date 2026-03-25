@@ -1,0 +1,55 @@
+name: "Upgrade Scheduler"
+description: "Automated, unattended update scheduler for Home Assistant Core, Supervisor and add-ons."
+version: "1.0.0"
+slug: "upgrade_scheduler"
+url: "https://github.com/chmajster/Home-Assistant-Upgrade-Scheduler"
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+init: false
+hassio_api: true
+hassio_role: manager
+homeassistant_api: true
+auth_api: true
+
+options:
+  schedule_cron: "0 3 * * 0"
+  update_core: true
+  update_supervisor: true
+  update_addons: true
+  addon_exclude: []
+  backup_before_update: true
+  backup_name_prefix: "upgrade-scheduler"
+  backup_keep_last: 5
+  pre_check_enabled: true
+  pre_check_cpu_threshold: 80
+  pre_check_memory_threshold: 80
+  force_update: false
+  silent_mode: false
+  notify_on_success: true
+  notify_on_failure: true
+  rollback_on_failure: false
+  log_level: "info"
+
+schema:
+  schedule_cron: "str"
+  update_core: "bool"
+  update_supervisor: "bool"
+  update_addons: "bool"
+  addon_exclude:
+    - "str"
+  backup_before_update: "bool"
+  backup_name_prefix: "str"
+  backup_keep_last: "int(1,20)"
+  pre_check_enabled: "bool"
+  pre_check_cpu_threshold: "int(1,100)"
+  pre_check_memory_threshold: "int(1,100)"
+  force_update: "bool"
+  silent_mode: "bool"
+  notify_on_success: "bool"
+  notify_on_failure: "bool"
+  rollback_on_failure: "bool"
+  log_level: "list(debug|info|warning|error)"

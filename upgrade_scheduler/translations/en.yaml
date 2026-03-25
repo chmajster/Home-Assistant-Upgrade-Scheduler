@@ -1,0 +1,61 @@
+en:
+  configuration:
+    schedule_cron:
+      name: Schedule (cron expression)
+      description: >-
+        Standard 5-field cron expression that defines when updates run.
+        Example: "0 3 * * 0" runs every Sunday at 03:00 UTC.
+    update_core:
+      name: Update Home Assistant Core
+      description: Automatically update Home Assistant Core when a new version is available.
+    update_supervisor:
+      name: Update Supervisor
+      description: Automatically update the Home Assistant Supervisor.
+    update_addons:
+      name: Update Add-ons
+      description: Automatically update all installed add-ons (except excluded ones).
+    addon_exclude:
+      name: Excluded Add-ons
+      description: List of add-on slugs to skip during automatic updates.
+    backup_before_update:
+      name: Backup before update
+      description: Create a full system backup before applying any updates.
+    backup_name_prefix:
+      name: Backup name prefix
+      description: Prefix used for backup names created by this add-on.
+    backup_keep_last:
+      name: Number of backups to keep
+      description: >-
+        Maximum number of add-on-managed backups to retain. Older ones are
+        deleted automatically.
+    pre_check_enabled:
+      name: Enable pre-checks
+      description: Verify system health (CPU, memory, service state) before updating.
+    pre_check_cpu_threshold:
+      name: CPU usage threshold (%)
+      description: Abort update if CPU usage exceeds this percentage.
+    pre_check_memory_threshold:
+      name: Memory usage threshold (%)
+      description: Abort update if memory usage exceeds this percentage.
+    force_update:
+      name: Force update
+      description: >-
+        Apply updates even when Supervisor reports none are available.
+        Use with caution.
+    silent_mode:
+      name: Silent mode
+      description: Suppress all persistent UI notifications; only log to the add-on log.
+    notify_on_success:
+      name: Notify on success
+      description: Send a persistent HA notification when the update run succeeds.
+    notify_on_failure:
+      name: Notify on failure
+      description: Send a persistent HA notification when the update run fails.
+    rollback_on_failure:
+      name: Rollback on failure
+      description: >-
+        Automatically restore the pre-update backup if any update fails.
+        Requires "Backup before update" to be enabled.
+    log_level:
+      name: Log level
+      description: Verbosity of add-on log output.
