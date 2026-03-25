@@ -49,21 +49,23 @@ class StubService:
 
 def test_dashboard_api_accepts_local_requests() -> None:
     server = DashboardServer(StubService())
-    client = server.app.test_client()
+    status, content_type, payload = server.handle_request(
+        method="GET",
+        raw_path="/api/status",
+        remote_addr="127.0.0.1",
+    )
 
-    response = client.get("/api/status", environ_base={"REMOTE_ADDR": "127.0.0.1"})
-
-    assert response.status_code == 200
+    assert status == 200
+    assert "application/json" in content_type
+    assert b"pending_updates" in payload
 
 
 def test_dashboard_webhook_requires_token() -> None:
     service = StubService()
     server = DashboardServer(service)
-    client = server.app.test_client()
+    unauthorized = server.handle_request(method="POST", raw_path="/api/webhook/trigger")
+    authorized = server.handle_request(method="POST", raw_path="/api/webhook/trigger?token=secret")
 
-    unauthorized = client.post("/api/webhook/trigger")
-    authorized = client.post("/api/webhook/trigger?token=secret")
-
-    assert unauthorized.status_code == 401
-    assert authorized.status_code == 200
+    assert unauthorized[0] == 401
+    assert authorized[0] == 200
     assert service.queued == [("install", "webhook")]

@@ -5,8 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 
-from croniter import croniter
-
+from ha_autoupgrade.utils.cron import next_cron_occurrence
 from ha_autoupgrade.utils.dates import add_seconds, deterministic_jitter, parse_weekday_time
 
 
@@ -30,7 +29,7 @@ class CronTrigger(Trigger):
         self.expression = expression
 
     def next_after(self, now: datetime, *, seed: str, jitter_seconds: int) -> datetime:
-        next_run = croniter(self.expression, now).get_next(datetime)
+        next_run = next_cron_occurrence(self.expression, now)
         return add_seconds(next_run, deterministic_jitter(jitter_seconds, seed))
 
 

@@ -74,7 +74,6 @@ Run tests locally:
 cd ha_auto_upgrade
 python -m venv .venv
 . .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
 pip install -r requirements-dev.txt
 pytest -q
 ```

@@ -6,8 +6,6 @@ from datetime import UTC, datetime, time, timedelta
 import hashlib
 import random
 
-from dateutil import tz
-
 from ha_autoupgrade.constants import DEFAULT_WEEKDAYS
 
 _WEEKDAY_MAP = {day: index for index, day in enumerate(DEFAULT_WEEKDAYS)}
@@ -18,7 +16,7 @@ def utc_now() -> datetime:
 
 
 def local_now() -> datetime:
-    return datetime.now(tz.tzlocal())
+    return datetime.now().astimezone()
 
 
 def parse_iso_datetime(value: str | None) -> datetime | None:

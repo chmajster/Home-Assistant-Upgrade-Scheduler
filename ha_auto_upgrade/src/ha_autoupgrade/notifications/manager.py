@@ -7,8 +7,7 @@ import json
 import logging
 import smtplib
 from typing import Any
-
-import requests
+from urllib import error, request
 
 from ha_autoupgrade.api.supervisor import SupervisorClient
 from ha_autoupgrade.config import AppConfig
@@ -42,17 +41,19 @@ class NotificationManager:
                 self.logger.exception("Failed to call notify service %s", service)
 
         if self.config.notify_webhook_url:
-            headers = {}
+            headers = {"Content-Type": "application/json"}
             if self.config.notify_webhook_token:
                 headers["Authorization"] = f"Bearer {self.config.notify_webhook_token}"
             try:
-                requests.post(
-                    self.config.notify_webhook_url,
-                    json=payload,
+                req = request.Request(
+                    url=self.config.notify_webhook_url,
+                    data=json.dumps(payload).encode("utf-8"),
                     headers=headers,
-                    timeout=15,
-                ).raise_for_status()
-            except requests.RequestException:
+                    method="POST",
+                )
+                with request.urlopen(req, timeout=15):
+                    pass
+            except (error.URLError, TimeoutError, OSError):
                 self.logger.exception("Failed to deliver webhook notification")
 
         if self.config.smtp_enabled:

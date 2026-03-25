@@ -9,6 +9,8 @@ HA AutoUpgrade is a Supervisor-based Home Assistant add-on that automates update
 
 It is intended for Home Assistant OS and Supervised installations where Supervisor API endpoints are available.
 
+The runtime is intentionally implemented with the Python standard library only. That keeps image builds independent from external Python package indexes, which is useful on installations with restricted outbound DNS or package access during Supervisor builds.
+
 ## What It Does
 
 - discovers available updates from Supervisor
@@ -222,7 +224,7 @@ Run tests locally in a Python 3.12 environment:
 cd ha_auto_upgrade
 python -m venv .venv
 . .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt -r requirements-dev.txt
+pip install -r requirements-dev.txt
 pytest -q
 ```
 

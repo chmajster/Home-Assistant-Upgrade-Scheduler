@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import logging
 import os
 import time
 from typing import Any
-
-import requests
+from urllib import error, request
 
 from ha_autoupgrade.constants import DEFAULT_CORE_API_URL, DEFAULT_SUPERVISOR_URL
 
@@ -30,17 +30,17 @@ class SupervisorClient:
         token = os.getenv("SUPERVISOR_TOKEN", "")
         if not token:
             raise SupervisorAPIError("SUPERVISOR_TOKEN is not available")
-        self._session = requests.Session()
-        self._session.headers.update(
-            {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            }
-        )
+        self._headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
 
     def configure_retries(self, max_attempts: int, backoff_seconds: int) -> None:
         self.max_attempts = max_attempts
         self.backoff_seconds = backoff_seconds
+
+    def _open(self, req: request.Request):
+        return request.urlopen(req, timeout=self.timeout_seconds)
 
     def _request(
         self,
@@ -54,30 +54,33 @@ class SupervisorClient:
         base_url = self.core_api_url if use_core_api else self.supervisor_url
         url = f"{base_url.rstrip('/')}/{path.lstrip('/')}"
         last_error: Exception | None = None
+        body = json.dumps(payload).encode("utf-8") if payload is not None else None
+        headers = dict(self._headers)
+
         for attempt in range(1, self.max_attempts + 1):
+            req = request.Request(url=url, data=body, headers=headers, method=method)
             try:
-                response = self._session.request(
-                    method=method,
-                    url=url,
-                    json=payload,
-                    timeout=self.timeout_seconds,
-                )
-                if accept_not_found and response.status_code == 404:
+                with self._open(req) as response:
+                    raw = response.read()
+            except error.HTTPError as err:
+                if accept_not_found and err.code == 404:
                     return None
-                response.raise_for_status()
-                if not response.content:
+                last_error = err
+            except (error.URLError, TimeoutError, OSError) as err:
+                last_error = err
+            else:
+                if not raw:
                     return {}
-                data = response.json()
+                data = json.loads(raw.decode("utf-8"))
                 if isinstance(data, dict) and data.get("result") == "ok" and "data" in data:
                     return data["data"]
                 if isinstance(data, dict) and "data" in data and len(data) == 1:
                     return data["data"]
                 return data
-            except (requests.RequestException, ValueError) as err:
-                last_error = err
-                if attempt >= self.max_attempts:
-                    break
+
+            if attempt < self.max_attempts:
                 time.sleep(self.backoff_seconds * attempt)
+
         raise SupervisorAPIError(f"{method} {path} failed: {last_error}") from last_error
 
     def ping(self) -> bool:

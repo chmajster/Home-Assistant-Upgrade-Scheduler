@@ -1,50 +1,45 @@
 from __future__ import annotations
 
+import json
 import logging
-
-import pytest
+from urllib import request
 
 from ha_autoupgrade.api.supervisor import SupervisorClient
 
 
 class FakeResponse:
-    def __init__(self, payload: dict, status_code: int = 200) -> None:
-        self._payload = payload
-        self.status_code = status_code
-        self.content = b"{}"
+    def __init__(self, payload: dict) -> None:
+        self._raw = json.dumps(payload).encode("utf-8")
 
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise RuntimeError(self.status_code)
+    def read(self) -> bytes:
+        return self._raw
 
-    def json(self) -> dict:
-        return self._payload
+    def __enter__(self) -> "FakeResponse":
+        return self
 
-
-class FakeSession:
-    def __init__(self) -> None:
-        self.headers = {}
-        self.calls: list[tuple[str, str, dict | None]] = []
-
-    def request(self, method: str, url: str, json: dict | None = None, timeout: int = 30):
-        self.calls.append((method, url, json))
-        if url.endswith("/addons/self/options"):
-            return FakeResponse({"result": "ok", "data": {"saved": True}})
-        return FakeResponse({"result": "ok", "data": {"ping": True}})
+    def __exit__(self, *_args) -> None:
+        return None
 
 
 def test_supervisor_client_unwraps_payload_and_posts_options(monkeypatch) -> None:
     monkeypatch.setenv("SUPERVISOR_TOKEN", "token")
     client = SupervisorClient(logging.getLogger("test"))
-    fake_session = FakeSession()
-    client._session = fake_session
+    calls: list[tuple[str, str, bytes | None]] = []
+
+    def fake_open(req: request.Request):
+        calls.append((req.get_method(), req.full_url, req.data))
+        if req.full_url.endswith("/addons/self/options"):
+            return FakeResponse({"result": "ok", "data": {"saved": True}})
+        return FakeResponse({"result": "ok", "data": {"ping": True}})
+
+    monkeypatch.setattr(client, "_open", fake_open)
 
     payload = client.set_addon_options("self", {"dry_run": True})
 
     assert payload == {"saved": True}
-    assert fake_session.calls[0][0] == "POST"
-    assert fake_session.calls[0][1].endswith("/addons/self/options")
-    assert fake_session.calls[0][2] == {"options": {"dry_run": True}}
+    assert calls[0][0] == "POST"
+    assert calls[0][1].endswith("/addons/self/options")
+    assert json.loads((calls[0][2] or b"{}").decode("utf-8")) == {"options": {"dry_run": True}}
 
 
 def test_wait_for_job_polls_until_done(monkeypatch) -> None:
