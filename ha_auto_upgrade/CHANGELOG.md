@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.4
+
+- added richer operational logging for checks, plans, backups, installs, and summaries
+- added a manual `check and install now` action
+- added manual scoped install actions for Core, Supervisor, OS, and add-ons
+
 ## 1.0.3
 
 - version bump from 1.0.2 to 1.0.3

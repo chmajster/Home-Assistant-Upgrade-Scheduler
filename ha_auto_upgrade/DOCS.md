@@ -145,7 +145,12 @@ The ingress dashboard shows:
 Manual actions:
 
 - check now
+- check and install now
 - update now
+- install only Core
+- install only Supervisor
+- install only OS
+- install only add-ons
 - backup now
 - retry failed items
 - clear stuck state
@@ -159,7 +164,12 @@ Key endpoints:
 - `GET /api/health`
 - `GET /api/history`
 - `POST /api/actions/check`
+- `POST /api/actions/check-install`
 - `POST /api/actions/update`
+- `POST /api/actions/update/core`
+- `POST /api/actions/update/supervisor`
+- `POST /api/actions/update/os`
+- `POST /api/actions/update/addons`
 - `POST /api/actions/backup`
 - `POST /api/actions/retry`
 - `POST /api/actions/clear`

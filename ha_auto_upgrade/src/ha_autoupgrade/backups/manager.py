@@ -46,6 +46,7 @@ class BackupManager:
             slug = job.get("slug") or job.get("reference")
         if not slug:
             raise RuntimeError("Backup creation did not return a backup slug")
+        self.logger.info("Backup created successfully: %s", slug)
         self.cleanup_retention()
         return slug
 

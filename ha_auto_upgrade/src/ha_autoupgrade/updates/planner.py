@@ -25,6 +25,7 @@ class UpdatePlanner:
         self.logger = logger
 
     def discover(self, refresh: bool = True) -> list[UpdateCandidate]:
+        self.logger.info("Discovering available updates (refresh=%s)", refresh)
         if refresh:
             self.client.reload_updates()
             self.client.reload_store()
@@ -88,6 +89,10 @@ class UpdatePlanner:
                     )
                 )
 
+        self.logger.info(
+            "Discovered updates: %s",
+            [f"{item.component_type}:{item.name}->{item.target_version}" for item in candidates],
+        )
         return candidates
 
     def build_plan(
@@ -98,6 +103,7 @@ class UpdatePlanner:
         entity_states: dict[str, str],
         now: datetime,
     ) -> UpdatePlan:
+        self.logger.info("Building update plan for %d discovered candidates", len(candidates))
         selected: list[UpdateCandidate] = []
         skipped: list[dict[str, object]] = []
         for candidate in candidates:
@@ -116,6 +122,11 @@ class UpdatePlanner:
         if self.config.max_updates_per_run > 0:
             selected = selected[: self.config.max_updates_per_run]
 
+        self.logger.info(
+            "Update plan built: selected=%s skipped=%d",
+            [f"{item.component_type}:{item.name}" for item in selected],
+            len(skipped),
+        )
         return UpdatePlan(items=selected, skipped=skipped, generated_at=now)
 
     def _sort_key(self, candidate: UpdateCandidate) -> tuple[int, str]:

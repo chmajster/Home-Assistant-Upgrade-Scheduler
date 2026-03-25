@@ -114,6 +114,11 @@ ui:
   subtitle: Policy-driven updates, safety gates, backups, diagnostics, and a lightweight local dashboard.
   check_now: Check now
   update_now: Update now
+  check_install_now: Check and install now
+  update_core_now: Install Core
+  update_supervisor_now: Install Supervisor
+  update_os_now: Install OS
+  update_addons_now: Install add-ons
   backup_now: Backup now
   retry_failed: Retry failed items
   clear_stuck: Clear stuck state

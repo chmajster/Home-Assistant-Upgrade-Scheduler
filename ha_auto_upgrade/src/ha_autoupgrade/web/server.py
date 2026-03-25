@@ -118,6 +118,7 @@ class DashboardServer:
         <div class="hero-actions">
           <button onclick="postAction('/api/actions/check')">{escape(ui['check_now'])}</button>
           <button class="accent" onclick="postAction('/api/actions/update')">{escape(ui['update_now'])}</button>
+          <button onclick="postAction('/api/actions/check-install')">{escape(ui['check_install_now'])}</button>
         </div>
       </section>
       <section class="card-grid">
@@ -149,6 +150,10 @@ class DashboardServer:
             <p>{escape(ui['actions_hint'])}</p>
           </div>
           <div class="action-grid">
+            <button class="accent" onclick="postAction('/api/actions/update/core')">{escape(ui['update_core_now'])}</button>
+            <button class="accent" onclick="postAction('/api/actions/update/supervisor')">{escape(ui['update_supervisor_now'])}</button>
+            <button class="accent" onclick="postAction('/api/actions/update/os')">{escape(ui['update_os_now'])}</button>
+            <button class="accent" onclick="postAction('/api/actions/update/addons')">{escape(ui['update_addons_now'])}</button>
             <button onclick="postAction('/api/actions/backup')">{escape(ui['backup_now'])}</button>
             <button onclick="postAction('/api/actions/retry')">{escape(ui['retry_failed'])}</button>
             <button onclick="postAction('/api/actions/clear')">{escape(ui['clear_stuck'])}</button>
@@ -267,9 +272,24 @@ class DashboardServer:
         if method == "POST" and parsed.path == "/api/actions/check":
             self.service.enqueue_action("check", "dashboard")
             return self._json(200, {"status": "queued", "action": "check"})
+        if method == "POST" and parsed.path == "/api/actions/check-install":
+            self.service.enqueue_action("check_install", "dashboard")
+            return self._json(200, {"status": "queued", "action": "check_install"})
         if method == "POST" and parsed.path == "/api/actions/update":
             self.service.enqueue_action("install", "dashboard")
             return self._json(200, {"status": "queued", "action": "install"})
+        if method == "POST" and parsed.path == "/api/actions/update/core":
+            self.service.enqueue_action("install", "dashboard", {"allowed_types": ["core"]})
+            return self._json(200, {"status": "queued", "action": "install", "allowed_types": ["core"]})
+        if method == "POST" and parsed.path == "/api/actions/update/supervisor":
+            self.service.enqueue_action("install", "dashboard", {"allowed_types": ["supervisor"]})
+            return self._json(200, {"status": "queued", "action": "install", "allowed_types": ["supervisor"]})
+        if method == "POST" and parsed.path == "/api/actions/update/os":
+            self.service.enqueue_action("install", "dashboard", {"allowed_types": ["os"]})
+            return self._json(200, {"status": "queued", "action": "install", "allowed_types": ["os"]})
+        if method == "POST" and parsed.path == "/api/actions/update/addons":
+            self.service.enqueue_action("install", "dashboard", {"allowed_types": ["addon"]})
+            return self._json(200, {"status": "queued", "action": "install", "allowed_types": ["addon"]})
         if method == "POST" and parsed.path == "/api/actions/backup":
             self.service.enqueue_action("backup", "dashboard")
             return self._json(200, {"status": "queued", "action": "backup"})

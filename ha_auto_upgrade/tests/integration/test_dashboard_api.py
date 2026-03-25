@@ -10,10 +10,10 @@ class StubConfig:
 class StubService:
     def __init__(self) -> None:
         self.config = StubConfig()
-        self.queued: list[tuple[str, str]] = []
+        self.queued: list[tuple[str, str, object]] = []
 
     def enqueue_action(self, action: str, source: str = "manual", payload=None) -> None:
-        self.queued.append((action, source))
+        self.queued.append((action, source, payload))
 
     def status(self):
         return {
@@ -68,4 +68,32 @@ def test_dashboard_webhook_requires_token() -> None:
 
     assert unauthorized[0] == 401
     assert authorized[0] == 200
-    assert service.queued == [("install", "webhook")]
+    assert service.queued == [("install", "webhook", None)]
+
+
+def test_dashboard_check_install_action_is_available() -> None:
+    service = StubService()
+    server = DashboardServer(service)
+
+    response = server.handle_request(
+        method="POST",
+        raw_path="/api/actions/check-install",
+        remote_addr="127.0.0.1",
+    )
+
+    assert response[0] == 200
+    assert service.queued == [("check_install", "dashboard", None)]
+
+
+def test_dashboard_scoped_install_action_is_available() -> None:
+    service = StubService()
+    server = DashboardServer(service)
+
+    response = server.handle_request(
+        method="POST",
+        raw_path="/api/actions/update/core",
+        remote_addr="127.0.0.1",
+    )
+
+    assert response[0] == 200
+    assert service.queued == [("install", "dashboard", {"allowed_types": ["core"]})]

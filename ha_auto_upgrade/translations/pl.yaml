@@ -114,6 +114,11 @@ ui:
   subtitle: Aktualizacje sterowane politykami, bramki bezpieczenstwa, kopie zapasowe, diagnostyka i lekki lokalny panel.
   check_now: Sprawdz teraz
   update_now: Aktualizuj teraz
+  check_install_now: Sprawdz i zainstaluj
+  update_core_now: Instaluj Core
+  update_supervisor_now: Instaluj Supervisor
+  update_os_now: Instaluj OS
+  update_addons_now: Instaluj dodatki
   backup_now: Utworz kopie
   retry_failed: Ponow nieudane elementy
   clear_stuck: Wyczysc stan zawieszenia

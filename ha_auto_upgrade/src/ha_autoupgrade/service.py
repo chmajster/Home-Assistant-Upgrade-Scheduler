@@ -111,11 +111,18 @@ class AutoUpgradeService:
     ) -> None:
         with self.queue_lock:
             self.action_queue.append((action, source, payload or {}))
+        self.logger.info(
+            "Queued action '%s' from %s with payload=%s",
+            action,
+            source,
+            payload or {},
+        )
 
     def tick(self) -> None:
         self._watchdog()
         action = self._dequeue_action()
         if action:
+            self.logger.info("Dispatching queued action '%s' from %s", action[0], action[1])
             self._dispatch(*action)
             return
 
@@ -123,8 +130,10 @@ class AutoUpgradeService:
         due = self.scheduler.due_actions(state)
         for action_name in due:
             if action_name == "install" and not self.config.auto_install:
+                self.logger.info("Scheduled install skipped because auto_install is disabled")
                 self._advance_install_schedule()
                 return
+            self.logger.info("Dispatching scheduled action '%s'", action_name)
             self._dispatch(action_name, "schedule", {})
             return
 
@@ -137,8 +146,10 @@ class AutoUpgradeService:
     def _dispatch(self, action: str, source: str, payload: dict[str, Any]) -> None:
         if action == "check":
             self.run_check(source)
+        elif action == "check_install":
+            self.run_check_and_install(source, payload=payload)
         elif action == "install":
-            self.run_install(source)
+            self.run_install(source, payload=payload)
         elif action == "backup":
             self.backup_now(source)
         elif action == "retry":
@@ -244,6 +255,7 @@ class AutoUpgradeService:
 
     def run_check(self, trigger: str) -> dict[str, Any]:
         try:
+            self.logger.info("Starting update check (trigger=%s)", trigger)
             state = self.state_store.read()
             schedule = self.scheduler.ensure_schedule(state)
             snapshot = self._collect_system_snapshot()
@@ -271,6 +283,12 @@ class AutoUpgradeService:
                     "skipped": len(plan.skipped),
                 },
             )
+            self.logger.info(
+                "Update check completed: found=%d skipped=%d pending=%s",
+                len(candidates),
+                len(plan.skipped),
+                [item.name for item in plan.items],
+            )
             return {
                 "snapshot": snapshot.to_dict(),
                 "updates": [item.to_dict() for item in plan.items],
@@ -288,7 +306,54 @@ class AutoUpgradeService:
             self._audit("check_failed", {"trigger": trigger, "error": str(err)})
             return {"status": "failed", "error": str(err)}
 
-    def run_install(self, trigger: str) -> dict[str, Any]:
+    def run_check_and_install(self, trigger: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        self.logger.info("Starting combined check-and-install flow (trigger=%s)", trigger)
+        check_result = self.run_check(f"{trigger}:preinstall_check")
+        if check_result.get("status") == "failed":
+            self.logger.warning("Combined check-and-install aborted because the check phase failed")
+            return {
+                "status": "failed",
+                "phase": "check",
+                "check": check_result,
+            }
+        install_result = self.run_install(trigger, payload=payload)
+        return {
+            "status": install_result.get("status", "unknown"),
+            "phase": "install",
+            "check": check_result,
+            "install": install_result,
+        }
+
+    def _filter_plan_items(
+        self,
+        plan,
+        allowed_types: list[str] | None,
+    ):
+        if not allowed_types:
+            return plan
+        normalized = {entry.lower() for entry in allowed_types}
+        filtered_items = [item for item in plan.items if item.component_type in normalized]
+        skipped = list(plan.skipped)
+        for item in plan.items:
+            if item.component_type not in normalized:
+                skipped.append(
+                    {
+                        "candidate": item.to_dict(),
+                        "reasons": [f"Manual install scope does not include {item.component_type}"],
+                    }
+                )
+        plan.items = filtered_items
+        plan.skipped = skipped
+        return plan
+
+    def run_install(self, trigger: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        payload = payload or {}
+        allowed_types = payload.get("allowed_types")
+        self.logger.info(
+            "Starting install run (trigger=%s, allowed_types=%s)",
+            trigger,
+            allowed_types or ["all"],
+        )
         if trigger == "schedule" and not self.config.auto_install:
             self._advance_install_schedule()
             return {"status": "skipped", "reasons": ["Automatic installation is disabled"]}
@@ -304,6 +369,7 @@ class AutoUpgradeService:
         )
         if runtime_reasons or not decision.allowed:
             reasons = runtime_reasons + decision.reasons
+            self.logger.warning("Install run skipped: %s", reasons)
             self.notifier.send("skip", "HA AutoUpgrade skipped", {"event": "skip", "reasons": reasons})
             self._audit("skip", {"trigger": trigger, "reasons": reasons})
             self._advance_install_schedule()
@@ -311,6 +377,7 @@ class AutoUpgradeService:
 
         if not self._acquire_run_lock():
             reasons = ["Another run is already active"]
+            self.logger.warning("Install run skipped because another run is active")
             self._audit("skip", {"trigger": trigger, "reasons": reasons})
             self._advance_install_schedule()
             return {"status": "skipped", "reasons": reasons}
@@ -324,8 +391,12 @@ class AutoUpgradeService:
                 entity_states=entity_states,
                 now=utc_now(),
             )
+            plan = self._filter_plan_items(plan, allowed_types)
             if not plan.items:
                 reasons = ["No updates matched policy"]
+                if allowed_types:
+                    reasons = [f"No updates matched manual scope {allowed_types}"]
+                self.logger.info("Install run has no matching updates: %s", reasons)
                 self._audit("skip", {"trigger": trigger, "reasons": reasons})
                 self._advance_install_schedule()
                 return {"status": "skipped", "reasons": reasons}
@@ -340,6 +411,7 @@ class AutoUpgradeService:
                 backup_id = self.backup_manager.create_pre_update_backup(trigger)
                 self.state_store.set_running_backup_id(backup_id)
                 self.state_store.mark_backup(backup_id)
+                self.logger.info("Pre-update backup created: %s", backup_id)
             self._run_pre_actions()
             summary = self.executor.execute(
                 plan=plan,
@@ -352,6 +424,7 @@ class AutoUpgradeService:
             next_install = self.scheduler.compute_next("install")
             next_check = self.scheduler.compute_next("check")
             self.state_store.set_next_runs(to_iso(next_check), to_iso(next_install))
+            self.logger.info("Install run completed with status=%s", summary.status)
             return summary.to_dict()
         except Exception as err:
             self.logger.exception("Install run failed before completion")
@@ -373,6 +446,12 @@ class AutoUpgradeService:
 
     def _handle_summary(self, summary: RunSummary) -> None:
         self.state_store.finish_job(summary)
+        self.logger.info(
+            "Handling run summary: status=%s results=%d backup_id=%s",
+            summary.status,
+            len(summary.results),
+            summary.backup_id,
+        )
         failed = [item for item in summary.results if item.result == "failed"]
         if failed or summary.status == "failed":
             new_failure_count = self.state_store.read().get("failure_count", 0) + 1
@@ -417,9 +496,11 @@ class AutoUpgradeService:
             self.logger.exception("Failed to fire run completed event")
 
     def backup_now(self, trigger: str) -> dict[str, Any]:
+        self.logger.info("Starting manual backup (trigger=%s)", trigger)
         backup_id = self.backup_manager.create_pre_update_backup(trigger)
         if backup_id:
             self.state_store.mark_backup(backup_id)
+            self.logger.info("Manual backup completed: %s", backup_id)
         self._audit("backup", {"trigger": trigger, "backup_id": backup_id})
         return {"backup_id": backup_id}
 
