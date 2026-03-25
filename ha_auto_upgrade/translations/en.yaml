@@ -1,6 +1,12 @@
 name: HA AutoUpgrade
 description: Intelligent, policy-driven update automation for Home Assistant
 configuration:
+  check_interval_minutes:
+    name: Check interval in minutes
+    description: How often the add-on checks for updates.
+  auto_install:
+    name: Install automatically
+    description: If enabled, scheduled checks can also install updates automatically.
   log_level:
     name: Log level
     description: Logging verbosity for Supervisor logs and the local dashboard.

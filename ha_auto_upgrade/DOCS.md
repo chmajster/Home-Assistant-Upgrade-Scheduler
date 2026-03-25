@@ -107,40 +107,28 @@ Safe-by-default behaviors include:
 
 ## Configuration Notes
 
-Complex list options use simple string formats:
+The add-on configuration exposed in Home Assistant is intentionally minimal:
 
-- `pinned_versions`
-  - format: `component_or_slug=version`
-  - example: `core=2026.3.4`
-- `minimum_required_versions`
-  - format: `component_or_slug=version`
-- `require_entity_states`
-  - format: `entity_id=state`
-  - example: `input_boolean.update_window=on`
-- `pre_update_services` and `post_update_services`
-  - format: `domain.service|{"json":"payload"}`
-  - example: `script.prepare_updates|{"source":"ha_autoupgrade"}`
+- `check_interval_minutes`
+  - how often the add-on checks for updates
+- `auto_install`
+  - if enabled, scheduled checks can also trigger scheduled installs
+- `create_backup`
+  - whether a Home Assistant backup is created before an install run
+
+Advanced safety and policy controls still exist in the code with safe defaults, but they are no longer exposed in the normal add-on options UI.
 
 ## Scheduling
 
-The add-on supports three scheduling styles:
+The visible configuration uses one interval:
 
-- interval
-  - `schedule_check_interval_minutes`
-  - `schedule_install_interval_minutes`
-- cron
-  - `schedule_check_cron`
-  - `schedule_install_cron`
-- fixed weekday/time
-  - `schedule_check_weekday_time`
-  - `schedule_install_weekday_time`
-  - format: `sun@03:00`
+- `check_interval_minutes`
 
-If more than one schedule style is configured for the same action type, precedence is:
+That interval controls scheduled update checks.
 
-1. cron
-2. weekday/time
-3. interval
+If `auto_install` is enabled, the same interval is also used for scheduled install attempts.
+
+Manual actions from the dashboard remain available regardless of the scheduler settings.
 
 ## Web UI and API
 

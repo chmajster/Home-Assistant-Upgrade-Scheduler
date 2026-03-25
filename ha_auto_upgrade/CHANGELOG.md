@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.3
+
+- version bump from 1.0.2 to 1.0.3
+
+## 1.0.2
+
+- simplified add-on configuration to three options only:
+- `check_interval_minutes`
+- `auto_install`
+- `create_backup`
+- removed complex Home Assistant add-on schema entries from the visible configuration
+
 ## 1.0.1
 
 - maintenance release

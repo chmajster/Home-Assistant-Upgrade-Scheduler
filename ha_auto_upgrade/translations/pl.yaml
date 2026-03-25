@@ -1,6 +1,12 @@
 name: HA AutoUpgrade
 description: Inteligentna, oparta na politykach automatyzacja aktualizacji Home Assistant
 configuration:
+  check_interval_minutes:
+    name: Interwal sprawdzania w minutach
+    description: Jak czesto dodatek ma sprawdzac dostepne aktualizacje.
+  auto_install:
+    name: Instaluj automatycznie
+    description: Jesli wlaczone, zaplanowane sprawdzenia moga tez automatycznie instalowac aktualizacje.
   log_level:
     name: Poziom logowania
     description: Szczegolowosc logow w Supervisorze i lokalnym panelu.

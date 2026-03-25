@@ -29,6 +29,9 @@ class ConfigError(ValueError):
 
 
 DEFAULT_OPTIONS: dict[str, Any] = {
+    "check_interval_minutes": 60,
+    "auto_install": False,
+    "create_backup": True,
     "log_level": "info",
     "json_logs": False,
     "dry_run": False,
@@ -45,7 +48,6 @@ DEFAULT_OPTIONS: dict[str, Any] = {
     "staged_rollout_seed": "default",
     "max_updates_per_run": 0,
     "delay_between_updates_seconds": 45,
-    "create_backup": True,
     "backup_mode": "full",
     "backup_password": "",
     "backup_retention": 5,
@@ -131,6 +133,9 @@ def _parse_action_call(value: str) -> ActionCall:
 class AppConfig:
     raw_options: dict[str, Any]
     data_dir: Path = DATA_DIR
+    check_interval_minutes: int = 60
+    auto_install: bool = False
+    create_backup: bool = True
     log_level: str = "info"
     json_logs: bool = False
     dry_run: bool = False
@@ -149,7 +154,6 @@ class AppConfig:
     staged_rollout_seed: str = "default"
     max_updates_per_run: int = 0
     delay_between_updates_seconds: int = 45
-    create_backup: bool = True
     backup_mode: str = "full"
     backup_password: str = ""
     backup_retention: int = 5
@@ -252,6 +256,9 @@ class AppConfig:
         config = cls(
             raw_options=merged,
             data_dir=data_dir,
+            check_interval_minutes=int(merged["check_interval_minutes"]),
+            auto_install=bool(merged["auto_install"]),
+            create_backup=bool(merged["create_backup"]),
             log_level=log_level,
             json_logs=bool(merged["json_logs"]),
             dry_run=bool(merged["dry_run"]),
@@ -270,14 +277,13 @@ class AppConfig:
             staged_rollout_seed=str(merged["staged_rollout_seed"]),
             max_updates_per_run=int(merged["max_updates_per_run"]),
             delay_between_updates_seconds=int(merged["delay_between_updates_seconds"]),
-            create_backup=bool(merged["create_backup"]),
             backup_mode=backup_mode,
             backup_password=str(merged["backup_password"] or ""),
             backup_retention=int(merged["backup_retention"]),
             backup_partial_addons=list(merged["backup_partial_addons"]),
             rollback_on_failure=bool(merged["rollback_on_failure"]),
-            schedule_check_interval_minutes=int(merged["schedule_check_interval_minutes"]),
-            schedule_install_interval_minutes=int(merged["schedule_install_interval_minutes"]),
+            schedule_check_interval_minutes=int(merged["check_interval_minutes"]),
+            schedule_install_interval_minutes=int(merged["check_interval_minutes"]),
             schedule_check_cron=str(merged["schedule_check_cron"] or ""),
             schedule_install_cron=str(merged["schedule_install_cron"] or ""),
             schedule_check_weekday_time=str(merged["schedule_check_weekday_time"] or ""),
@@ -339,6 +345,7 @@ class AppConfig:
 
     def validate(self) -> None:
         for name in (
+            "check_interval_minutes",
             "schedule_check_interval_minutes",
             "schedule_install_interval_minutes",
             "backup_retention",
@@ -355,6 +362,8 @@ class AppConfig:
         ):
             if getattr(self, name) < 0:
                 raise ConfigError(f"{name} must be >= 0")
+        if self.check_interval_minutes <= 0:
+            raise ConfigError("check_interval_minutes must be > 0")
         if self.smtp_enabled and (not self.smtp_host or not self.smtp_from or not self.smtp_to):
             raise ConfigError("SMTP is enabled but smtp_host/smtp_from/smtp_to are incomplete")
 

@@ -122,6 +122,9 @@ class AutoUpgradeService:
         state = self.state_store.read()
         due = self.scheduler.due_actions(state)
         for action_name in due:
+            if action_name == "install" and not self.config.auto_install:
+                self._advance_install_schedule()
+                return
             self._dispatch(action_name, "schedule", {})
             return
 
@@ -286,6 +289,10 @@ class AutoUpgradeService:
             return {"status": "failed", "error": str(err)}
 
     def run_install(self, trigger: str) -> dict[str, Any]:
+        if trigger == "schedule" and not self.config.auto_install:
+            self._advance_install_schedule()
+            return {"status": "skipped", "reasons": ["Automatic installation is disabled"]}
+
         runtime_reasons = self._blocked_by_runtime_state()
         snapshot = self._collect_system_snapshot()
         entity_states = self._collect_entity_states()
