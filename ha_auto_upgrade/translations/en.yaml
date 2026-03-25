@@ -1,0 +1,143 @@
+name: HA AutoUpgrade
+description: Intelligent, policy-driven update automation for Home Assistant
+configuration:
+  log_level:
+    name: Log level
+    description: Logging verbosity for Supervisor logs and the local dashboard.
+  json_logs:
+    name: JSON logs
+    description: Emit logs as JSON lines instead of human-readable text.
+  dry_run:
+    name: Dry-run mode
+    description: Simulate checks and plans without executing updates.
+  notify_only_mode:
+    name: Notify-only mode
+    description: Detect updates and notify, but do not install them.
+  check_only_mode:
+    name: Check-only mode
+    description: Prevent installation runs and keep the add-on in discovery mode.
+  security_only_mode:
+    name: Security-only mode
+    description: Prefer security-flagged updates, or patch-level updates when classification is unavailable.
+  enabled_update_types:
+    name: Enabled update types
+    description: Choose which component categories may be updated automatically.
+  update_strategy:
+    name: Update strategy
+    description: Control the ordering of component updates during a run.
+  excluded_addons:
+    name: Excluded add-ons
+    description: Add-on slugs that must never be updated automatically.
+  pinned_versions:
+    name: Pinned versions
+    description: Version hold entries using component_or_slug=version.
+  minimum_required_versions:
+    name: Minimum required versions
+    description: Reject update targets below these version requirements.
+  staged_rollout_enabled:
+    name: Staged rollout
+    description: Enable percentage-based rollout selection for add-on updates.
+  staged_rollout_percent:
+    name: Rollout percent
+    description: Percentage of eligible add-ons allowed in staged rollout mode.
+  create_backup:
+    name: Create backup
+    description: Create a Supervisor backup before an install run.
+  backup_mode:
+    name: Backup mode
+    description: Full or partial backup mode.
+  backup_retention:
+    name: Backup retention
+    description: Number of HA AutoUpgrade-created backups to keep.
+  rollback_on_failure:
+    name: Rollback on failure
+    description: Request a full restore from the created backup when an install run fails.
+  schedule_check_interval_minutes:
+    name: Check interval
+    description: Minutes between scheduled update checks when interval scheduling is used.
+  schedule_install_interval_minutes:
+    name: Install interval
+    description: Minutes between scheduled install runs when interval scheduling is used.
+  schedule_check_cron:
+    name: Check cron
+    description: Optional cron expression for update checks.
+  schedule_install_cron:
+    name: Install cron
+    description: Optional cron expression for install runs.
+  schedule_install_weekday_time:
+    name: Install weekday/time
+    description: Optional fixed schedule in format sun@03:00.
+  maintenance_window:
+    name: Maintenance window
+    description: Allowed time range for install runs, for example 22:00-06:00.
+  blackout_dates:
+    name: Blackout dates
+    description: Dates where runs are blocked, optionally annotated as YYYY-MM-DD:label.
+  min_free_disk_mb:
+    name: Minimum free disk
+    description: Block runs if free disk falls below this threshold.
+  max_cpu_load_1m:
+    name: Maximum CPU load
+    description: Block runs if 1-minute load exceeds this threshold.
+  min_free_memory_mb:
+    name: Minimum free memory
+    description: Block runs if free memory falls below this threshold.
+  approval_entity:
+    name: Approval entity
+    description: Optional helper entity that must be on before updates can run.
+  require_entity_states:
+    name: Required entity states
+    description: Required entity=value rules that must all match.
+  notify_services:
+    name: Notify services
+    description: Home Assistant notify services used for event notifications.
+  notify_webhook_url:
+    name: Notification webhook URL
+    description: Optional webhook endpoint for status notifications.
+  smtp_enabled:
+    name: SMTP enabled
+    description: Enable email notifications through an SMTP server.
+  webhook_trigger_token:
+    name: Webhook trigger token
+    description: Bearer token or query token used by the external trigger endpoint.
+network:
+  8099/tcp: Local dashboard/API port
+ui:
+  title: HA AutoUpgrade
+  eyebrow: Supervisor-safe update automation
+  subtitle: Policy-driven updates, safety gates, backups, diagnostics, and a lightweight local dashboard.
+  check_now: Check now
+  update_now: Update now
+  backup_now: Backup now
+  retry_failed: Retry failed items
+  clear_stuck: Clear stuck state
+  export_diag: Export diagnostics
+  self_test: Run self-test
+  import_config: Import configuration
+  import_apply: Validate and apply
+  actions: Actions
+  actions_hint: Manual controls are queued and executed by the main service loop.
+  pending_updates: Pending updates
+  last_check: Last check
+  next_install: Next install
+  last_backup: Last backup
+  last_result: Last result
+  audit_trail: Audit trail
+  audit_hint: Recent checks, updates, skips, backups, and diagnostics.
+  recent_logs: Recent logs
+  logs_hint: Supervisor also exposes container logs directly.
+  no_logs: No logs yet
+  no_updates: No pending updates
+  no_history: No history yet
+  policy_note: Skipped items remain visible in the audit trail and the last check snapshot.
+  component: Component
+  current_version: Current
+  target_version: Target
+  exclusions: Exclusions
+  skipped_reasons: Skipped reasons
+  no_skips: No recent skip reasons
+  no_exclusions: No exclusions configured
+  health: Health
+  safe_mode: Safe mode
+  ok: OK
+  attention: Attention

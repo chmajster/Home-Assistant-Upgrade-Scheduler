@@ -1,0 +1,143 @@
+name: HA AutoUpgrade
+description: Inteligentna, oparta na politykach automatyzacja aktualizacji Home Assistant
+configuration:
+  log_level:
+    name: Poziom logowania
+    description: Szczegolowosc logow w Supervisorze i lokalnym panelu.
+  json_logs:
+    name: Logi JSON
+    description: Emituj logi jako linie JSON zamiast tekstu czytelnego dla czlowieka.
+  dry_run:
+    name: Tryb testowy
+    description: Symuluj kontrole i plan bez wykonywania aktualizacji.
+  notify_only_mode:
+    name: Tylko powiadomienia
+    description: Wykrywaj aktualizacje i wysylaj powiadomienia, ale ich nie instaluj.
+  check_only_mode:
+    name: Tylko sprawdzanie
+    description: Zablokuj instalacje i pozostaw dodatek w trybie wykrywania.
+  security_only_mode:
+    name: Tylko bezpieczenstwo
+    description: Preferuj aktualizacje oznaczone jako bezpieczenstwa albo poprawki patch, gdy brak klasyfikacji.
+  enabled_update_types:
+    name: Dozwolone typy aktualizacji
+    description: Wybierz kategorie komponentow dopuszczone do automatycznej aktualizacji.
+  update_strategy:
+    name: Strategia aktualizacji
+    description: Steruje kolejnoscia aktualizacji komponentow.
+  excluded_addons:
+    name: Wykluczone dodatki
+    description: Slugi dodatkow, ktore nigdy nie maja byc aktualizowane automatycznie.
+  pinned_versions:
+    name: Przypiete wersje
+    description: Wpisy blokady wersji w formacie komponent_lub_slug=wersja.
+  minimum_required_versions:
+    name: Minimalne wymagane wersje
+    description: Odrzucaj cele aktualizacji ponizej tych wymagan.
+  staged_rollout_enabled:
+    name: Etapowe wdrazanie
+    description: Wlacz procentowy wybor dodatkow w etapowym trybie wdrazania.
+  staged_rollout_percent:
+    name: Procent wdrozenia
+    description: Procent kwalifikujacych sie dodatkow dopuszczonych do aktualizacji.
+  create_backup:
+    name: Tworz kopie zapasowa
+    description: Tworz kopie zapasowa Supervisor przed instalacja.
+  backup_mode:
+    name: Tryb kopii zapasowej
+    description: Pelna albo czesciowa kopia zapasowa.
+  backup_retention:
+    name: Retencja kopii
+    description: Liczba kopii utworzonych przez HA AutoUpgrade do zachowania.
+  rollback_on_failure:
+    name: Przywroc po bledzie
+    description: Po nieudanej aktualizacji zglos pelne odtworzenie z utworzonej kopii.
+  schedule_check_interval_minutes:
+    name: Interwal sprawdzania
+    description: Liczba minut pomiedzy sprawdzeniami przy harmonogramie interwalowym.
+  schedule_install_interval_minutes:
+    name: Interwal instalacji
+    description: Liczba minut pomiedzy uruchomieniami instalacji przy harmonogramie interwalowym.
+  schedule_check_cron:
+    name: Cron sprawdzania
+    description: Opcjonalne wyrazenie cron dla sprawdzen aktualizacji.
+  schedule_install_cron:
+    name: Cron instalacji
+    description: Opcjonalne wyrazenie cron dla uruchomien instalacji.
+  schedule_install_weekday_time:
+    name: Dzien/godzina instalacji
+    description: Opcjonalny staly harmonogram w formacie sun@03:00.
+  maintenance_window:
+    name: Okno serwisowe
+    description: Dozwolony zakres czasu dla instalacji, na przyklad 22:00-06:00.
+  blackout_dates:
+    name: Daty blokady
+    description: Daty, w ktorych uruchomienia sa blokowane, opcjonalnie z opisem YYYY-MM-DD:etykieta.
+  min_free_disk_mb:
+    name: Minimalne wolne miejsce
+    description: Zablokuj uruchomienie, jesli wolne miejsce spadnie ponizej progu.
+  max_cpu_load_1m:
+    name: Maksymalne obciazenie CPU
+    description: Zablokuj uruchomienie, jesli obciazenie 1-minutowe przekroczy prog.
+  min_free_memory_mb:
+    name: Minimalna wolna pamiec
+    description: Zablokuj uruchomienie, jesli wolna pamiec spadnie ponizej progu.
+  approval_entity:
+    name: Encja zatwierdzajaca
+    description: Opcjonalna encja pomocnicza, ktora musi byc wlaczona przed aktualizacja.
+  require_entity_states:
+    name: Wymagane stany encji
+    description: Reguly encja=stan, ktore musza wszystkie pasowac.
+  notify_services:
+    name: Serwisy powiadomien
+    description: Serwisy notify Home Assistant uzywane do wysylania zdarzen.
+  notify_webhook_url:
+    name: URL webhooka powiadomien
+    description: Opcjonalny webhook do wysylania statusow.
+  smtp_enabled:
+    name: SMTP wlaczone
+    description: Wlacz powiadomienia e-mail przez serwer SMTP.
+  webhook_trigger_token:
+    name: Token wyzwalacza webhook
+    description: Token Bearer lub token w query dla zewnetrznego endpointu wyzwalajacego.
+network:
+  8099/tcp: Lokalny port panelu/API
+ui:
+  title: HA AutoUpgrade
+  eyebrow: Bezpieczna automatyzacja aktualizacji przez Supervisor
+  subtitle: Aktualizacje sterowane politykami, bramki bezpieczenstwa, kopie zapasowe, diagnostyka i lekki lokalny panel.
+  check_now: Sprawdz teraz
+  update_now: Aktualizuj teraz
+  backup_now: Utworz kopie
+  retry_failed: Ponow nieudane elementy
+  clear_stuck: Wyczysc stan zawieszenia
+  export_diag: Eksportuj diagnostyke
+  self_test: Uruchom autotest
+  import_config: Importuj konfiguracje
+  import_apply: Zweryfikuj i zastosuj
+  actions: Akcje
+  actions_hint: Reczne akcje sa kolejkowane i wykonywane przez glowna petle uslugi.
+  pending_updates: Oczekujace aktualizacje
+  last_check: Ostatnie sprawdzenie
+  next_install: Nastepna instalacja
+  last_backup: Ostatnia kopia
+  last_result: Ostatni wynik
+  audit_trail: Slad audytowy
+  audit_hint: Ostatnie sprawdzenia, aktualizacje, pominiecia, kopie i diagnostyka.
+  recent_logs: Ostatnie logi
+  logs_hint: Supervisor udostepnia tez logi kontenera bezposrednio.
+  no_logs: Brak logow
+  no_updates: Brak oczekujacych aktualizacji
+  no_history: Brak historii
+  policy_note: Pominiete elementy pozostaja widoczne w audycie i ostatnim sprawdzeniu.
+  component: Komponent
+  current_version: Obecna
+  target_version: Docelowa
+  exclusions: Wykluczenia
+  skipped_reasons: Powody pominiecia
+  no_skips: Brak ostatnich powodow pominiecia
+  no_exclusions: Brak skonfigurowanych wykluczen
+  health: Stan
+  safe_mode: Tryb bezpieczny
+  ok: OK
+  attention: Uwaga

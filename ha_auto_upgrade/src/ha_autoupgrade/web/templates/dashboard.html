@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="{{ lang }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ ui.title or "HA AutoUpgrade" }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+  </head>
+  <body>
+    <div class="background-orb orb-a"></div>
+    <div class="background-orb orb-b"></div>
+    <main class="layout">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">{{ ui.eyebrow or "Supervisor-safe update automation" }}</p>
+          <h1>{{ ui.title or "HA AutoUpgrade" }}</h1>
+          <p class="lead">{{ ui.subtitle or "Policy-driven updates, safety gates, backups, and diagnostics." }}</p>
+        </div>
+        <div class="hero-actions">
+          <button onclick="postAction('/api/actions/check')">{{ ui.check_now or "Check now" }}</button>
+          <button class="accent" onclick="postAction('/api/actions/update')">{{ ui.update_now or "Update now" }}</button>
+        </div>
+      </section>
+
+      <section class="card-grid">
+        <article class="card metric-card">
+          <p class="metric-label">{{ ui.health or "Health" }}</p>
+          <h2 class="{{ 'ok' if health.ok else 'bad' }}">{{ ui.ok if health.ok else ui.attention }}</h2>
+          <p>{{ health.snapshot.ha_state }}</p>
+        </article>
+        <article class="card metric-card">
+          <p class="metric-label">{{ ui.pending_updates or "Pending updates" }}</p>
+          <h2>{{ status.state.pending_updates|length }}</h2>
+          <p>{{ ui.last_check or "Last check" }}: {{ status.state.last_check.checked_at if status.state.last_check else "n/a" }}</p>
+        </article>
+        <article class="card metric-card">
+          <p class="metric-label">{{ ui.next_install or "Next install" }}</p>
+          <h2>{{ status.state.next_install or "n/a" }}</h2>
+          <p>{{ ui.safe_mode or "Safe mode" }}: {{ status.state.safe_mode_until or "off" }}</p>
+        </article>
+        <article class="card metric-card">
+          <p class="metric-label">{{ ui.last_backup or "Last backup" }}</p>
+          <h2>{{ status.state.last_backup or "n/a" }}</h2>
+          <p>{{ ui.last_result or "Last result" }}: {{ status.state.last_run.status if status.state.last_run else "n/a" }}</p>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="card">
+          <div class="card-header">
+            <h3>{{ ui.actions or "Actions" }}</h3>
+            <p>{{ ui.actions_hint or "Manual controls are queued and executed by the main service loop." }}</p>
+          </div>
+          <div class="action-grid">
+            <button onclick="postAction('/api/actions/backup')">{{ ui.backup_now or "Backup now" }}</button>
+            <button onclick="postAction('/api/actions/retry')">{{ ui.retry_failed or "Retry failed items" }}</button>
+            <button onclick="postAction('/api/actions/clear')">{{ ui.clear_stuck or "Clear stuck state" }}</button>
+            <button onclick="postAction('/api/actions/export')">{{ ui.export_diag or "Export diagnostics" }}</button>
+            <button onclick="postAction('/api/actions/self-test')">{{ ui.self_test or "Run self-test" }}</button>
+          </div>
+          <div class="import-box">
+            <label for="import-options">{{ ui.import_config or "Import configuration" }}</label>
+            <textarea id="import-options" rows="8" placeholder='{"log_level":"debug"}'></textarea>
+            <button class="accent" onclick="importOptions()">{{ ui.import_apply or "Validate and apply" }}</button>
+          </div>
+          <p id="action-result" class="result-note"></p>
+          <div class="detail-grid">
+            <div>
+              <h4>{{ ui.skipped_reasons or "Skipped reasons" }}</h4>
+              <ul class="mini-list">
+                {% if status.state.last_run and status.state.last_run.skipped_reasons %}
+                  {% for reason in status.state.last_run.skipped_reasons %}
+                  <li>{{ reason }}</li>
+                  {% endfor %}
+                {% else %}
+                  <li>{{ ui.no_skips or "No recent skip reasons" }}</li>
+                {% endif %}
+              </ul>
+            </div>
+            <div>
+              <h4>{{ ui.exclusions or "Exclusions" }}</h4>
+              <ul class="mini-list">
+                {% for slug in status.config.excluded_addons %}
+                <li>{{ slug }}</li>
+                {% else %}
+                <li>{{ ui.no_exclusions or "No exclusions configured" }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h3>{{ ui.pending_updates or "Pending updates" }}</h3>
+            <p>{{ ui.policy_note or "Skipped items remain visible in the audit trail and last check snapshot." }}</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{{ ui.component or "Component" }}</th>
+                  <th>{{ ui.current_version or "Current" }}</th>
+                  <th>{{ ui.target_version or "Target" }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in status.state.pending_updates %}
+                <tr>
+                  <td>{{ item.name }} <span class="pill">{{ item.component_type }}</span></td>
+                  <td>{{ item.current_version }}</td>
+                  <td>{{ item.target_version }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="3">{{ ui.no_updates or "No pending updates" }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <h3>{{ ui.audit_trail or "Audit trail" }}</h3>
+            <p>{{ ui.audit_hint or "Recent checks, updates, skips, backups, and diagnostics." }}</p>
+          </div>
+          <ul class="timeline">
+            {% for item in status.recent_history %}
+            <li>
+              <span class="timeline-event">{{ item.event }}</span>
+              <span class="timeline-time">{{ item.ts }}</span>
+            </li>
+            {% else %}
+            <li>{{ ui.no_history or "No history yet" }}</li>
+            {% endfor %}
+          </ul>
+        </article>
+
+        <article class="card log-card">
+          <div class="card-header">
+            <h3>{{ ui.recent_logs or "Recent logs" }}</h3>
+            <p>{{ ui.logs_hint or "Supervisor will also show container logs directly." }}</p>
+          </div>
+          <div class="log-list">
+            {% for item in status.recent_logs %}
+            <div class="log-line log-{{ item.level }}">
+              <span>{{ item.timestamp }}</span>
+              <strong>{{ item.level }}</strong>
+              <code>{{ item.message }}</code>
+            </div>
+            {% else %}
+            <p>{{ ui.no_logs or "No logs yet" }}</p>
+            {% endfor %}
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      async function postAction(url, body = null) {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: body ? JSON.stringify(body) : null
+        });
+        const result = await response.json();
+        document.getElementById('action-result').textContent = JSON.stringify(result, null, 2);
+        setTimeout(() => window.location.reload(), 1500);
+      }
+
+      async function importOptions() {
+        const raw = document.getElementById('import-options').value.trim();
+        if (!raw) {
+          document.getElementById('action-result').textContent = 'No JSON provided.';
+          return;
+        }
+        let parsed;
+        try {
+          parsed = JSON.parse(raw);
+        } catch (error) {
+          document.getElementById('action-result').textContent = 'Invalid JSON payload.';
+          return;
+        }
+        await postAction('/api/actions/import', { options: parsed });
+      }
+    </script>
+  </body>
+</html>

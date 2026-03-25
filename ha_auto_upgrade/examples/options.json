@@ -1,0 +1,78 @@
+{
+  "log_level": "info",
+  "json_logs": false,
+  "dry_run": false,
+  "notify_only_mode": false,
+  "check_only_mode": false,
+  "security_only_mode": false,
+  "enabled_update_types": [
+    "core",
+    "supervisor",
+    "os",
+    "addons"
+  ],
+  "update_strategy": "addons_last",
+  "excluded_addons": [
+    "esphome"
+  ],
+  "pinned_versions": [
+    "core=2026.3.4"
+  ],
+  "minimum_required_versions": [
+    "supervisor=2026.03.0"
+  ],
+  "staged_rollout_enabled": true,
+  "staged_rollout_percent": 50,
+  "staged_rollout_seed": "home-lab",
+  "delay_between_updates_seconds": 60,
+  "create_backup": true,
+  "backup_mode": "full",
+  "backup_retention": 7,
+  "rollback_on_failure": false,
+  "schedule_check_cron": "0 */2 * * *",
+  "schedule_install_weekday_time": "sun@03:00",
+  "schedule_allowed_weekdays": [
+    "sat",
+    "sun"
+  ],
+  "schedule_jitter_seconds": 120,
+  "maintenance_window": "22:00-06:00",
+  "blackout_dates": [
+    "2026-12-24:holiday freeze",
+    "2026-12-25"
+  ],
+  "min_free_disk_mb": 2048,
+  "max_cpu_load_1m": 4.0,
+  "min_free_memory_mb": 512,
+  "cooldown_minutes_after_failure": 180,
+  "safe_mode_failure_threshold": 3,
+  "safe_mode_minutes": 360,
+  "watchdog_enabled": true,
+  "watchdog_timeout_minutes": 60,
+  "approval_entity": "input_boolean.autoupgrade_approval",
+  "require_entity_states": [
+    "input_boolean.update_window=on"
+  ],
+  "skip_if_someone_home_entity": "person.chris",
+  "skip_if_media_playing_entity": "media_player.living_room_tv",
+  "skip_if_critical_mode_entity": "input_boolean.critical_automation_mode",
+  "unstable_binary_sensor_entity": "binary_sensor.power_unstable",
+  "maintenance_mode_service": "input_boolean.turn_on|{\"entity_id\":\"input_boolean.maintenance_mode\"}",
+  "maintenance_mode_restore_service": "input_boolean.turn_off|{\"entity_id\":\"input_boolean.maintenance_mode\"}",
+  "pre_update_services": [
+    "script.prepare_updates|{\"source\":\"ha_autoupgrade\"}"
+  ],
+  "post_update_services": [
+    "script.finish_updates|{\"source\":\"ha_autoupgrade\"}"
+  ],
+  "post_update_restart_addons": [
+    "mosquitto"
+  ],
+  "notify_persistent": true,
+  "notify_services": [
+    "notify.mobile_app_phone"
+  ],
+  "notify_webhook_url": "",
+  "smtp_enabled": false,
+  "webhook_trigger_token": "replace_me"
+}

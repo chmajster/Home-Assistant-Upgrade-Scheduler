@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+*.pyc
+*.pyo
+*.pyd
+.coverage
+htmlcov/
+dist/
+build/
+*.log
+ha_auto_upgrade/.venv/
+ha_auto_upgrade/.pytest_cache/
+ha_auto_upgrade/.coverage
+ha_auto_upgrade/data/

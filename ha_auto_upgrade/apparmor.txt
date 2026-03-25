@@ -1,0 +1,17 @@
+#include <tunables/global>
+
+profile ha_auto_upgrade flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/python>
+
+  network,
+  capability net_bind_service,
+
+  /data/** rwk,
+  /backup/** rw,
+  /app/** r,
+  /tmp/** rw,
+
+  deny /proc/** wklx,
+  deny /sys/** wklx,
+}
