@@ -42,8 +42,10 @@ def test_import_configuration_merges_current_options(tmp_path: Path, monkeypatch
     result = service.import_configuration(
         {
             "options": {
-                "install_days": "mon,wed,fri",
+                "install_days": "mon,tue,wed,thu,fri,sat,sun",
                 "install_hour": "04:30",
+                "schedule_install_frequency": "monthly",
+                "schedule_install_monthday": 15,
             }
         }
     )
@@ -51,12 +53,17 @@ def test_import_configuration_merges_current_options(tmp_path: Path, monkeypatch
     validated_options = service.client.validated[0]["options"]
     saved_options = service.client.saved[0]["options"]
     imported_file = Path(result["path"])
+    override_file = tmp_path / "runtime_overrides.json"
 
     assert validated_options["check_interval_minutes"] == 90
     assert validated_options["auto_install"] is True
-    assert validated_options["install_days"] == "mon,wed,fri"
+    assert validated_options["install_days"] == "mon,tue,wed,thu,fri,sat,sun"
     assert validated_options["install_hour"] == "04:30"
     assert saved_options == validated_options
-    assert reloaded[0].install_days == ("mon", "wed", "fri")
+    assert reloaded[0].install_days == ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
     assert reloaded[0].install_hour == "04:30"
+    assert reloaded[0].schedule_install_frequency == "monthly"
+    assert reloaded[0].schedule_install_monthday == 15
+    assert json.loads(override_file.read_text(encoding="utf-8"))["schedule_install_frequency"] == "monthly"
+    assert json.loads(override_file.read_text(encoding="utf-8"))["schedule_install_monthday"] == 15
     assert json.loads(imported_file.read_text(encoding="utf-8"))["check_interval_minutes"] == 90

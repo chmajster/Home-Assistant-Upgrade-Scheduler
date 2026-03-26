@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.13
+
+- version bump from 1.0.12 to 1.0.13
+
+## 1.0.12
+
+- replaced the basic install-day form with a Synology-inspired schedule GUI featuring mode, weekday, time, and frequency controls
+- added support for daily, weekly, monthly, and one-time install schedules in the internal scheduler
+- schedule edits from the dashboard now split add-on schema options from local runtime overrides
+- version bump from 1.0.11 to 1.0.12
+
 ## 1.0.11
 
 - added dashboard weekday buttons for selecting install days with visible active/inactive states

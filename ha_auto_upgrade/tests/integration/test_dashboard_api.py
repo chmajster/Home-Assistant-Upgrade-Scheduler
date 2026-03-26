@@ -30,6 +30,9 @@ class StubService:
             "config": {
                 "install_days": "mon,wed",
                 "install_hour": "04:30",
+                "schedule_install_frequency": "weekly",
+                "schedule_install_monthday": 15,
+                "schedule_install_time_range_end": "",
             },
         }
 
@@ -114,6 +117,10 @@ def test_dashboard_homepage_contains_install_day_buttons() -> None:
     assert b"data-day=\"mon\"" in response[2]
     assert b"day-chip is-selected" in response[2]
     assert b"id=\"install-hour\"" in response[2]
+    assert b"id=\"mode-weekly\"" in response[2]
+    assert b"id=\"frequency-monthly\"" in response[2]
+    assert b"id=\"schedule-monthday\"" in response[2]
+    assert b"id=\"schedule-once-date\"" in response[2]
     assert b"04:30" in response[2]
 
 

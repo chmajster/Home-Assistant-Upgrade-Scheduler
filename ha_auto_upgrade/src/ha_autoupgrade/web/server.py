@@ -10,8 +10,14 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from ha_autoupgrade.constants import ALLOWED_DASHBOARD_IPS, ALLOWED_DASHBOARD_PREFIXES, WEB_PORT
+from ha_autoupgrade.constants import (
+    ALLOWED_DASHBOARD_IPS,
+    ALLOWED_DASHBOARD_PREFIXES,
+    DEFAULT_WEEKDAYS,
+    WEB_PORT,
+)
 from ha_autoupgrade.i18n import STRINGS
+from ha_autoupgrade.utils.dates import local_now, parse_iso_datetime
 
 
 class DashboardServer:
@@ -96,8 +102,9 @@ class DashboardServer:
         safe_mode_until = state.get("safe_mode_until") or "off"
         last_backup = state.get("last_backup") or "n/a"
         next_install = state.get("next_install") or "n/a"
-        install_days = str(status.get("config", {}).get("install_days", "sun") or "sun")
-        install_hour = str(status.get("config", {}).get("install_hour", "03:00") or "03:00")
+        config = status.get("config", {})
+        install_days = str(config.get("install_days", "sun") or "sun")
+        install_hour = str(config.get("install_hour", "03:00") or "03:00")
         weekday_order = [
             ("mon", ui["day_mon"]),
             ("tue", ui["day_tue"]),
@@ -109,9 +116,37 @@ class DashboardServer:
         ]
         selected_day_set = {token.strip().lower() for token in install_days.split(",") if token.strip()}
         selected_days = [code for code, _label in weekday_order if code in selected_day_set] or ["sun"]
-        install_schedule_label = ", ".join(
-            label for code, label in weekday_order if code in selected_days
+        schedule_frequency = str(config.get("schedule_install_frequency", "") or "").lower()
+        if schedule_frequency not in {"daily", "weekly", "monthly", "once"}:
+            schedule_frequency = "daily" if selected_day_set == set(DEFAULT_WEEKDAYS) else "weekly"
+        schedule_range_end = str(config.get("schedule_install_time_range_end", "") or "")
+        schedule_monthday = int(config.get("schedule_install_monthday", 1) or 1)
+        once_at = parse_iso_datetime(str(config.get("schedule_install_once_at", "") or ""))
+        once_local = once_at.astimezone() if once_at else None
+        once_date = once_local.date().isoformat() if once_local else ""
+        once_time = once_local.strftime("%H:%M") if once_local else install_hour
+        schedule_time_value = once_time if schedule_frequency == "once" else install_hour
+        schedule_mode = "once" if schedule_frequency == "once" else "weekly" if schedule_frequency == "weekly" else "daily"
+        schedule_time_label = (
+            f"{schedule_time_value}-{schedule_range_end}"
+            if schedule_range_end and schedule_frequency != "once"
+            else schedule_time_value
         )
+        if schedule_frequency == "daily":
+            install_schedule_label = f"{ui['schedule_summary_daily']} @ {schedule_time_label}"
+        elif schedule_frequency == "monthly":
+            install_schedule_label = (
+                f"{ui['schedule_summary_monthly']} {schedule_monthday} @ {schedule_time_label}"
+            )
+        elif schedule_frequency == "once" and once_local:
+            install_schedule_label = (
+                f"{ui['schedule_summary_once']} {once_local.date().isoformat()} {once_local.strftime('%H:%M')}"
+            )
+        else:
+            install_schedule_label = (
+                f"{ui['schedule_summary_weekly']}: "
+                f"{', '.join(label for code, label in weekday_order if code in selected_days)} @ {schedule_time_label}"
+            )
         day_buttons = "".join(
             (
                 f"<button type=\"button\" class=\"day-chip{' is-selected' if code in selected_days else ''}\" "
@@ -122,8 +157,25 @@ class DashboardServer:
         )
         weekday_codes_json = json.dumps([code for code, _label in weekday_order])
         selected_days_json = json.dumps(selected_days)
+        schedule_frequency_json = json.dumps(schedule_frequency)
+        schedule_range_end_json = json.dumps(schedule_range_end)
+        local_today_json = json.dumps(local_now().date().isoformat())
         install_day_required_json = json.dumps(ui["install_day_required"])
         install_hour_required_json = json.dumps(ui["install_hour_required"])
+        install_range_end_required_json = json.dumps(ui["install_range_end_required"])
+        install_month_day_required_json = json.dumps(ui["install_month_day_required"])
+        install_once_date_required_json = json.dumps(ui["install_once_date_required"])
+        install_once_future_required_json = json.dumps(ui["install_once_future_required"])
+        full_day_window_json = json.dumps("00:00-23:59")
+        schedule_frequency_once_hint_json = json.dumps(ui["schedule_frequency_once_hint"])
+        day_hints_json = json.dumps(
+            {
+                "daily": ui["schedule_days_hint_daily"],
+                "weekly": ui["schedule_days_hint_weekly"],
+                "monthly": ui["schedule_days_hint_monthly"],
+                "once": ui["schedule_days_hint_once"],
+            }
+        )
 
         return f"""<!doctype html>
 <html lang="{escape(language)}">
@@ -163,7 +215,7 @@ class DashboardServer:
         <article class="card metric-card">
           <p class="metric-label">{escape(ui['next_install'])}</p>
           <h2>{escape(str(next_install))}</h2>
-          <p>{escape(ui['install_schedule'])}: {escape(f"{install_schedule_label} @ {install_hour}")}</p>
+          <p>{escape(ui['install_schedule'])}: {escape(install_schedule_label)}</p>
           <p>{escape(ui['safe_mode'])}: {escape(str(safe_mode_until))}</p>
         </article>
         <article class="card metric-card">
@@ -190,14 +242,82 @@ class DashboardServer:
             <button onclick="postAction('/api/actions/self-test')">{escape(ui['self_test'])}</button>
           </div>
           <div class="schedule-box">
-            <h4>{escape(ui['install_days_editor'])}</h4>
-            <p>{escape(ui['install_days_hint'])}</p>
-            <div class="day-toggle-group">{day_buttons}</div>
-            <div class="schedule-controls">
-              <div class="field-group">
-                <label for="install-hour">{escape(ui['install_time'])}</label>
-                <input id="install-hour" type="time" value="{escape(install_hour)}">
+            <div class="schedule-header">
+              <h4>{escape(ui['schedule_panel_title'])}</h4>
+              <p>{escape(ui['schedule_panel_hint'])}</p>
+            </div>
+            <div class="schedule-section">
+              <div class="section-copy">
+                <h5>{escape(ui['schedule_mode'])}</h5>
               </div>
+              <div class="schedule-choice-group">
+                <button
+                  type="button"
+                  id="mode-daily"
+                  class="schedule-choice{' is-selected' if schedule_mode == 'daily' else ''}"
+                  onclick="setScheduleMode('daily')"
+                >{escape(ui['schedule_mode_daily'])}</button>
+                <button
+                  type="button"
+                  id="mode-weekly"
+                  class="schedule-choice{' is-selected' if schedule_mode == 'weekly' else ''}"
+                  onclick="setScheduleMode('weekly')"
+                >{escape(ui['schedule_mode_weekly'])}</button>
+                <button
+                  type="button"
+                  id="mode-once"
+                  class="schedule-choice{' is-selected' if schedule_mode == 'once' else ''}"
+                  onclick="setScheduleMode('once')"
+                >{escape(ui['schedule_mode_once'])}</button>
+              </div>
+            </div>
+            <div class="schedule-section">
+              <div class="section-copy">
+                <h5>{escape(ui['schedule_days'])}</h5>
+                <p id="schedule-days-hint"></p>
+              </div>
+              <div id="weekly-day-picker" class="day-toggle-group"{' hidden' if schedule_frequency != 'weekly' else ''}>{day_buttons}</div>
+              <div id="monthly-day-field" class="field-group"{' hidden' if schedule_frequency != 'monthly' else ''}>
+                <label for="schedule-monthday">{escape(ui['schedule_month_day'])}</label>
+                <input id="schedule-monthday" type="number" min="1" max="31" value="{schedule_monthday}">
+              </div>
+              <div id="once-date-field" class="field-group"{' hidden' if schedule_frequency != 'once' else ''}>
+                <label for="schedule-once-date">{escape(ui['schedule_once_date'])}</label>
+                <input id="schedule-once-date" type="date" value="{escape(once_date)}">
+              </div>
+            </div>
+            <div class="schedule-section">
+              <div class="section-copy">
+                <h5>{escape(ui['schedule_time'])}</h5>
+                <p>{escape(ui['schedule_time_hint'])}</p>
+              </div>
+              <div class="schedule-choice-group compact">
+                <button type="button" id="time-mode-point" class="schedule-choice" onclick="setTimeMode(false)">{escape(ui['schedule_exact_time'])}</button>
+                <button type="button" id="time-mode-range" class="schedule-choice" onclick="setTimeMode(true)">{escape(ui['schedule_time_range'])}</button>
+              </div>
+              <div class="schedule-controls">
+                <div class="field-group">
+                  <label for="install-hour">{escape(ui['install_time'])}</label>
+                  <input id="install-hour" type="time" value="{escape(schedule_time_value)}">
+                </div>
+                <div id="schedule-end-field" class="field-group"{' hidden' if not schedule_range_end or schedule_frequency == 'once' else ''}>
+                  <label for="schedule-end-time">{escape(ui['schedule_window_end'])}</label>
+                  <input id="schedule-end-time" type="time" value="{escape(schedule_range_end)}">
+                </div>
+              </div>
+            </div>
+            <div class="schedule-section">
+              <div class="section-copy">
+                <h5>{escape(ui['schedule_frequency'])}</h5>
+                <p id="schedule-frequency-hint"></p>
+              </div>
+              <div class="schedule-choice-group">
+                <button type="button" id="frequency-daily" class="schedule-choice" onclick="setScheduleFrequency('daily')">{escape(ui['schedule_frequency_daily'])}</button>
+                <button type="button" id="frequency-weekly" class="schedule-choice" onclick="setScheduleFrequency('weekly')">{escape(ui['schedule_frequency_weekly'])}</button>
+                <button type="button" id="frequency-monthly" class="schedule-choice" onclick="setScheduleFrequency('monthly')">{escape(ui['schedule_frequency_monthly'])}</button>
+              </div>
+            </div>
+            <div class="schedule-actions">
               <button class="accent" onclick="saveInstallSchedule()">{escape(ui['save_install_schedule'])}</button>
             </div>
           </div>
@@ -264,35 +384,154 @@ class DashboardServer:
         setTimeout(() => window.location.reload(), 1500);
       }}
       const installWeekdayOrder = {weekday_codes_json};
-      const selectedInstallDays = new Set({selected_days_json});
-      function toggleInstallDay(day, element) {{
-        if (selectedInstallDays.has(day)) {{
-          selectedInstallDays.delete(day);
-        }} else {{
-          selectedInstallDays.add(day);
+      const scheduleDayHints = {day_hints_json};
+      const scheduleState = {{
+        frequency: {schedule_frequency_json},
+        selectedDays: new Set({selected_days_json}),
+        useRange: Boolean({schedule_range_end_json}) && {schedule_frequency_json} !== 'once'
+      }};
+      function activeScheduleMode() {{
+        if (scheduleState.frequency === 'once') {{
+          return 'once';
         }}
-        const isSelected = selectedInstallDays.has(day);
-        element.classList.toggle('is-selected', isSelected);
-        element.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        if (scheduleState.frequency === 'weekly') {{
+          return 'weekly';
+        }}
+        return 'daily';
       }}
-      async function saveInstallSchedule() {{
-        if (!selectedInstallDays.size) {{
-          document.getElementById('action-result').textContent = {install_day_required_json};
+      function renderChoiceState(id, active) {{
+        const element = document.getElementById(id);
+        if (!element) {{
           return;
         }}
+        element.classList.toggle('is-selected', active);
+        element.setAttribute('aria-pressed', active ? 'true' : 'false');
+      }}
+      function syncDayButtons() {{
+        document.querySelectorAll('.day-chip').forEach((button) => {{
+          const day = button.dataset.day;
+          const selected = scheduleState.selectedDays.has(day);
+          button.classList.toggle('is-selected', selected);
+          button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        }});
+      }}
+      function renderScheduleControls() {{
+        const mode = activeScheduleMode();
+        const isOnce = scheduleState.frequency === 'once';
+        renderChoiceState('mode-daily', mode === 'daily');
+        renderChoiceState('mode-weekly', mode === 'weekly');
+        renderChoiceState('mode-once', mode === 'once');
+        renderChoiceState('frequency-daily', scheduleState.frequency === 'daily');
+        renderChoiceState('frequency-weekly', scheduleState.frequency === 'weekly');
+        renderChoiceState('frequency-monthly', scheduleState.frequency === 'monthly');
+        renderChoiceState('time-mode-point', !scheduleState.useRange || isOnce);
+        renderChoiceState('time-mode-range', scheduleState.useRange && !isOnce);
+        document.getElementById('weekly-day-picker').hidden = scheduleState.frequency !== 'weekly';
+        document.getElementById('monthly-day-field').hidden = scheduleState.frequency !== 'monthly';
+        document.getElementById('once-date-field').hidden = !isOnce;
+        document.getElementById('schedule-end-field').hidden = !scheduleState.useRange || isOnce;
+        document.getElementById('schedule-days-hint').textContent = scheduleDayHints[scheduleState.frequency];
+        document.getElementById('schedule-frequency-hint').textContent = isOnce ? {schedule_frequency_once_hint_json} : '';
+        ['frequency-daily', 'frequency-weekly', 'frequency-monthly'].forEach((id) => {{
+          document.getElementById(id).disabled = isOnce;
+        }});
+        ['time-mode-point', 'time-mode-range'].forEach((id) => {{
+          document.getElementById(id).disabled = isOnce;
+        }});
+        document.getElementById('schedule-once-date').min = {local_today_json};
+        syncDayButtons();
+      }}
+      function setScheduleMode(mode) {{
+        if (mode === 'once') {{
+          scheduleState.frequency = 'once';
+          scheduleState.useRange = false;
+        }} else if (mode === 'weekly') {{
+          scheduleState.frequency = 'weekly';
+        }} else {{
+          scheduleState.frequency = 'daily';
+        }}
+        renderScheduleControls();
+      }}
+      function setScheduleFrequency(frequency) {{
+        scheduleState.frequency = frequency;
+        renderScheduleControls();
+      }}
+      function setTimeMode(useRange) {{
+        scheduleState.useRange = useRange;
+        renderScheduleControls();
+      }}
+      function toggleInstallDay(day, _element) {{
+        if (scheduleState.selectedDays.has(day)) {{
+          scheduleState.selectedDays.delete(day);
+        }} else {{
+          scheduleState.selectedDays.add(day);
+        }}
+        syncDayButtons();
+      }}
+      async function saveInstallSchedule() {{
         const installHour = document.getElementById('install-hour').value;
         if (!installHour) {{
           document.getElementById('action-result').textContent = {install_hour_required_json};
           return;
         }}
-        const orderedDays = installWeekdayOrder.filter((day) => selectedInstallDays.has(day));
+        if (scheduleState.frequency === 'weekly' && !scheduleState.selectedDays.size) {{
+          document.getElementById('action-result').textContent = {install_day_required_json};
+          return;
+        }}
+        const rangeEnd = document.getElementById('schedule-end-time').value;
+        if (scheduleState.useRange && scheduleState.frequency !== 'once' && !rangeEnd) {{
+          document.getElementById('action-result').textContent = {install_range_end_required_json};
+          return;
+        }}
+        const monthDay = Number.parseInt(document.getElementById('schedule-monthday').value || '0', 10);
+        if (scheduleState.frequency === 'monthly' && (!Number.isInteger(monthDay) || monthDay < 1 || monthDay > 31)) {{
+          document.getElementById('action-result').textContent = {install_month_day_required_json};
+          return;
+        }}
+        const onceDate = document.getElementById('schedule-once-date').value;
+        let onceAt = '';
+        if (scheduleState.frequency === 'once') {{
+          if (!onceDate) {{
+            document.getElementById('action-result').textContent = {install_once_date_required_json};
+            return;
+          }}
+          const localDateTime = new Date(`${{onceDate}}T${{installHour}}:00`);
+          if (Number.isNaN(localDateTime.getTime()) || localDateTime <= new Date()) {{
+            document.getElementById('action-result').textContent = {install_once_future_required_json};
+            return;
+          }}
+          onceAt = localDateTime.toISOString();
+        }}
+        const orderedDays = installWeekdayOrder.filter((day) => scheduleState.selectedDays.has(day));
+        let installDays = orderedDays.join(',');
+        let allowedWeekdays = orderedDays;
+        if (scheduleState.frequency === 'daily' || scheduleState.frequency === 'monthly') {{
+          installDays = installWeekdayOrder.join(',');
+          allowedWeekdays = installWeekdayOrder;
+        }}
+        if (scheduleState.frequency === 'once') {{
+          const onceRun = new Date(`${{onceDate}}T12:00:00`);
+          installDays = installWeekdayOrder[(onceRun.getDay() + 6) % 7];
+          allowedWeekdays = installWeekdayOrder;
+        }}
+        const maintenanceWindow = scheduleState.useRange && scheduleState.frequency !== 'once'
+          ? `${{installHour}}-${{rangeEnd}}`
+          : {full_day_window_json};
         await postAction('/api/actions/import', {{
           options: {{
-            install_days: orderedDays.join(','),
-            install_hour: installHour
+            install_days: installDays,
+            install_hour: installHour,
+            maintenance_window: maintenanceWindow,
+            schedule_allowed_weekdays: allowedWeekdays,
+            schedule_install_cron: '',
+            schedule_install_frequency: scheduleState.frequency,
+            schedule_install_monthday: scheduleState.frequency === 'monthly' ? monthDay : 1,
+            schedule_install_once_at: onceAt,
+            schedule_install_time_range_end: scheduleState.useRange && scheduleState.frequency !== 'once' ? rangeEnd : ''
           }}
         }});
       }}
+      renderScheduleControls();
       async function importOptions() {{
         const raw = document.getElementById('import-options').value.trim();
         if (!raw) {{
