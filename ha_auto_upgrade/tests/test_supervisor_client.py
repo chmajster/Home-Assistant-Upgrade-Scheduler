@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
-from urllib import request
+from urllib import error, request
 
-from ha_autoupgrade.api.supervisor import SupervisorClient
+from ha_autoupgrade.api.supervisor import SupervisorAPIError, SupervisorClient
 
 
 class FakeResponse:
@@ -60,3 +60,46 @@ def test_wait_for_job_polls_until_done(monkeypatch) -> None:
     result = client.wait_for_job("job-1", timeout_seconds=2, poll_seconds=0)
 
     assert result["reference"] == "backup-1"
+
+
+def test_refresh_updates_uses_addon_safe_endpoint_first(monkeypatch) -> None:
+    monkeypatch.setenv("SUPERVISOR_TOKEN", "token")
+    client = SupervisorClient(logging.getLogger("test"))
+    calls: list[tuple[str, str]] = []
+
+    def fake_request(self, method: str, path: str, **_kwargs):
+        calls.append((method, path))
+        return {}
+
+    monkeypatch.setattr(SupervisorClient, "_request", fake_request)
+
+    client.refresh_updates()
+
+    assert calls == [("POST", "/refresh_updates")]
+
+
+def test_refresh_updates_falls_back_when_refresh_endpoints_are_restricted(monkeypatch) -> None:
+    monkeypatch.setenv("SUPERVISOR_TOKEN", "token")
+    client = SupervisorClient(logging.getLogger("test"))
+    calls: list[tuple[str, str]] = []
+
+    def http_error(path: str, status: int) -> error.HTTPError:
+        return error.HTTPError(f"http://supervisor{path}", status, "error", hdrs=None, fp=None)
+
+    def fake_request(self, method: str, path: str, **_kwargs):
+        calls.append((method, path))
+        if path == "/refresh_updates":
+            raise SupervisorAPIError("POST /refresh_updates failed") from http_error(path, 404)
+        if path == "/reload_updates":
+            raise SupervisorAPIError("POST /reload_updates failed") from http_error(path, 403)
+        return {}
+
+    monkeypatch.setattr(SupervisorClient, "_request", fake_request)
+
+    client.refresh_updates()
+
+    assert calls == [
+        ("POST", "/refresh_updates"),
+        ("POST", "/reload_updates"),
+        ("POST", "/store/reload"),
+    ]

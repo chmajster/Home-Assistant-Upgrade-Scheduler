@@ -10,6 +10,12 @@ from ha_autoupgrade.updates.planner import UpdatePlanner
 
 
 class PlannerClientStub:
+    def __init__(self) -> None:
+        self.refresh_calls = 0
+
+    def refresh_updates(self):
+        self.refresh_calls += 1
+
     def reload_updates(self):
         return None
 
@@ -42,6 +48,7 @@ class PlannerClientStub:
 
 
 def test_update_planner_discovers_and_orders_updates() -> None:
+    client = PlannerClientStub()
     config = AppConfig.from_dict(
         {
             "update_strategy": "addons_last",
@@ -50,7 +57,7 @@ def test_update_planner_discovers_and_orders_updates() -> None:
     )
     planner = UpdatePlanner(
         config,
-        PlannerClientStub(),
+        client,
         PolicyEngine(config, logging.getLogger("test")),
         logging.getLogger("test"),
     )
@@ -71,4 +78,5 @@ def test_update_planner_discovers_and_orders_updates() -> None:
         now=datetime(2026, 3, 25, 10, 0, tzinfo=UTC),
     )
 
+    assert client.refresh_calls == 1
     assert [item.component_type for item in plan.items] == ["supervisor", "core", "addon", "os"]

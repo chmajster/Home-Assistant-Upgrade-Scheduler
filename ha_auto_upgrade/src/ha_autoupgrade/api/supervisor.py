@@ -107,6 +107,35 @@ class SupervisorClient:
         response = self._request("GET", "/available_updates")
         return response.get("available_updates", response)
 
+    def refresh_updates(self) -> None:
+        """Refresh update metadata using endpoints that are safe for add-on roles."""
+        try:
+            self._request("POST", "/refresh_updates")
+            return
+        except SupervisorAPIError as err:
+            cause = err.__cause__
+            if not isinstance(cause, error.HTTPError) or cause.code not in {403, 404, 405}:
+                raise
+            self.logger.warning(
+                "POST /refresh_updates is unavailable for this Supervisor/API combination (%s); "
+                "falling back to narrower refresh calls",
+                cause,
+            )
+
+        try:
+            self._request("POST", "/reload_updates")
+        except SupervisorAPIError as err:
+            cause = err.__cause__
+            if not isinstance(cause, error.HTTPError) or cause.code not in {403, 404, 405}:
+                raise
+            self.logger.info(
+                "POST /reload_updates is unavailable for the add-on role (%s); "
+                "continuing with store refresh only",
+                cause,
+            )
+
+        self._request("POST", "/store/reload")
+
     def reload_updates(self) -> None:
         self._request("POST", "/reload_updates")
 

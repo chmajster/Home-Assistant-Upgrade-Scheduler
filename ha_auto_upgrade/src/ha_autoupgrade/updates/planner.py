@@ -27,9 +27,7 @@ class UpdatePlanner:
     def discover(self, refresh: bool = True) -> list[UpdateCandidate]:
         self.logger.info("Discovering available updates (refresh=%s)", refresh)
         if refresh:
-            self.client.reload_updates()
-            self.client.reload_store()
-            self.client.reload_addons()
+            self.client.refresh_updates()
 
         candidates: list[UpdateCandidate] = []
 

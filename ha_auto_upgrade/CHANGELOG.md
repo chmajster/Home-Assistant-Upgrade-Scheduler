@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.15
+
+- switched scheduled/manual refreshes from `POST /reload_updates` to the add-on-safe `POST /refresh_updates` flow
+- added a fallback path that keeps update discovery running even if some refresh endpoints are restricted
+- version bump from 1.0.14 to 1.0.15
+
 ## 1.0.14
 
 - version bump from 1.0.13 to 1.0.14
