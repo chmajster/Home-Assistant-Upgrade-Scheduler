@@ -48,6 +48,16 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=True)
 
 
+class TextFormatter(logging.Formatter):
+    """Render human-readable log lines with a stable timestamp-first prefix."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            fmt="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+
 def setup_logging(level: str, json_logs: bool) -> InMemoryLogHandler:
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
@@ -57,9 +67,7 @@ def setup_logging(level: str, json_logs: bool) -> InMemoryLogHandler:
     if json_logs:
         stream_handler.setFormatter(JsonFormatter())
     else:
-        stream_handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
-        )
+        stream_handler.setFormatter(TextFormatter())
 
     memory_handler = InMemoryLogHandler()
     root_logger.addHandler(stream_handler)
