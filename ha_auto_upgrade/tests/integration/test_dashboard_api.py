@@ -27,7 +27,10 @@ class StubService:
             },
             "recent_history": [],
             "recent_logs": [],
-            "config": {},
+            "config": {
+                "install_days": "mon,wed",
+                "install_hour": "04:30",
+            },
         }
 
     def health(self):
@@ -96,6 +99,22 @@ def test_dashboard_homepage_contains_check_install_button() -> None:
 
     assert response[0] == 200
     assert b"/api/actions/check-install" in response[2]
+
+
+def test_dashboard_homepage_contains_install_day_buttons() -> None:
+    server = DashboardServer(StubService())
+
+    response = server.handle_request(
+        method="GET",
+        raw_path="/?lang=pl",
+        remote_addr="127.0.0.1",
+    )
+
+    assert response[0] == 200
+    assert b"data-day=\"mon\"" in response[2]
+    assert b"day-chip is-selected" in response[2]
+    assert b"id=\"install-hour\"" in response[2]
+    assert b"04:30" in response[2]
 
 
 def test_dashboard_scoped_install_action_is_available() -> None:

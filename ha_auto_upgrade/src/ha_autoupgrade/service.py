@@ -583,7 +583,9 @@ class AutoUpgradeService:
         return {"status": "cleared"}
 
     def import_configuration(self, payload: dict[str, Any]) -> dict[str, Any]:
-        options = payload.get("options", payload)
+        incoming_options = payload.get("options", payload)
+        options = self.config.to_options_dict(redact_secrets=False)
+        options.update(incoming_options)
         validation = self.client.validate_addon_options("self", options)
         if not validation.get("valid", False):
             raise ValueError(validation.get("message", "Configuration validation failed"))

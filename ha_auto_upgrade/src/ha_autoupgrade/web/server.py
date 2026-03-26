@@ -96,8 +96,34 @@ class DashboardServer:
         safe_mode_until = state.get("safe_mode_until") or "off"
         last_backup = state.get("last_backup") or "n/a"
         next_install = state.get("next_install") or "n/a"
-        install_days = status.get("config", {}).get("install_days", "sun")
-        install_hour = status.get("config", {}).get("install_hour", "03:00")
+        install_days = str(status.get("config", {}).get("install_days", "sun") or "sun")
+        install_hour = str(status.get("config", {}).get("install_hour", "03:00") or "03:00")
+        weekday_order = [
+            ("mon", ui["day_mon"]),
+            ("tue", ui["day_tue"]),
+            ("wed", ui["day_wed"]),
+            ("thu", ui["day_thu"]),
+            ("fri", ui["day_fri"]),
+            ("sat", ui["day_sat"]),
+            ("sun", ui["day_sun"]),
+        ]
+        selected_day_set = {token.strip().lower() for token in install_days.split(",") if token.strip()}
+        selected_days = [code for code, _label in weekday_order if code in selected_day_set] or ["sun"]
+        install_schedule_label = ", ".join(
+            label for code, label in weekday_order if code in selected_days
+        )
+        day_buttons = "".join(
+            (
+                f"<button type=\"button\" class=\"day-chip{' is-selected' if code in selected_days else ''}\" "
+                f"data-day=\"{code}\" aria-pressed=\"{'true' if code in selected_days else 'false'}\" "
+                f"onclick=\"toggleInstallDay('{code}', this)\">{escape(label)}</button>"
+            )
+            for code, label in weekday_order
+        )
+        weekday_codes_json = json.dumps([code for code, _label in weekday_order])
+        selected_days_json = json.dumps(selected_days)
+        install_day_required_json = json.dumps(ui["install_day_required"])
+        install_hour_required_json = json.dumps(ui["install_hour_required"])
 
         return f"""<!doctype html>
 <html lang="{escape(language)}">
@@ -137,7 +163,7 @@ class DashboardServer:
         <article class="card metric-card">
           <p class="metric-label">{escape(ui['next_install'])}</p>
           <h2>{escape(str(next_install))}</h2>
-          <p>{escape(ui['install_schedule'])}: {escape(f"{install_days} @ {install_hour}")}</p>
+          <p>{escape(ui['install_schedule'])}: {escape(f"{install_schedule_label} @ {install_hour}")}</p>
           <p>{escape(ui['safe_mode'])}: {escape(str(safe_mode_until))}</p>
         </article>
         <article class="card metric-card">
@@ -162,6 +188,18 @@ class DashboardServer:
             <button onclick="postAction('/api/actions/clear')">{escape(ui['clear_stuck'])}</button>
             <button onclick="postAction('/api/actions/export')">{escape(ui['export_diag'])}</button>
             <button onclick="postAction('/api/actions/self-test')">{escape(ui['self_test'])}</button>
+          </div>
+          <div class="schedule-box">
+            <h4>{escape(ui['install_days_editor'])}</h4>
+            <p>{escape(ui['install_days_hint'])}</p>
+            <div class="day-toggle-group">{day_buttons}</div>
+            <div class="schedule-controls">
+              <div class="field-group">
+                <label for="install-hour">{escape(ui['install_time'])}</label>
+                <input id="install-hour" type="time" value="{escape(install_hour)}">
+              </div>
+              <button class="accent" onclick="saveInstallSchedule()">{escape(ui['save_install_schedule'])}</button>
+            </div>
           </div>
           <div class="import-box">
             <label for="import-options">{escape(ui['import_config'])}</label>
@@ -224,6 +262,36 @@ class DashboardServer:
         const result = await response.json();
         document.getElementById('action-result').textContent = JSON.stringify(result, null, 2);
         setTimeout(() => window.location.reload(), 1500);
+      }}
+      const installWeekdayOrder = {weekday_codes_json};
+      const selectedInstallDays = new Set({selected_days_json});
+      function toggleInstallDay(day, element) {{
+        if (selectedInstallDays.has(day)) {{
+          selectedInstallDays.delete(day);
+        }} else {{
+          selectedInstallDays.add(day);
+        }}
+        const isSelected = selectedInstallDays.has(day);
+        element.classList.toggle('is-selected', isSelected);
+        element.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+      }}
+      async function saveInstallSchedule() {{
+        if (!selectedInstallDays.size) {{
+          document.getElementById('action-result').textContent = {install_day_required_json};
+          return;
+        }}
+        const installHour = document.getElementById('install-hour').value;
+        if (!installHour) {{
+          document.getElementById('action-result').textContent = {install_hour_required_json};
+          return;
+        }}
+        const orderedDays = installWeekdayOrder.filter((day) => selectedInstallDays.has(day));
+        await postAction('/api/actions/import', {{
+          options: {{
+            install_days: orderedDays.join(','),
+            install_hour: installHour
+          }}
+        }});
       }}
       async function importOptions() {{
         const raw = document.getElementById('import-options').value.trim();

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.11
+
+- added dashboard weekday buttons for selecting install days with visible active/inactive states
+- dashboard schedule updates now merge with the current add-on options instead of replacing unspecified settings
+- version bump from 1.0.10 to 1.0.11
+
 ## 1.0.10
 
 - fixed add-on startup crash caused by `SupervisorClient` using `slots=True` without declaring the internal `_headers` field

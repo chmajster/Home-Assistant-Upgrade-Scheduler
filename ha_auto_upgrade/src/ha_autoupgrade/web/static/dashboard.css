@@ -172,6 +172,67 @@ button.accent {
   margin-top: 1rem;
 }
 
+.schedule-box {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.schedule-box h4,
+.field-group label {
+  margin: 0;
+}
+
+.schedule-box p,
+.field-group label {
+  color: var(--muted);
+}
+
+.day-toggle-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 0.85rem 0 1rem;
+}
+
+button.day-chip {
+  padding: 0.7rem 1rem;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+button.day-chip.is-selected {
+  color: #041116;
+  background: linear-gradient(135deg, var(--accent-2), #9af1de);
+  border-color: transparent;
+}
+
+.schedule-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 14rem) auto;
+  gap: 0.85rem;
+  align-items: end;
+}
+
+.field-group {
+  display: grid;
+  gap: 0.45rem;
+}
+
+input[type="time"] {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  color: var(--text);
+  padding: 0.9rem 1rem;
+  font: inherit;
+}
+
 textarea {
   width: 100%;
   margin: 0.4rem 0 0.75rem;
@@ -300,7 +361,8 @@ th, td {
   .card-grid,
   .content-grid,
   .detail-grid,
-  .log-line {
+  .log-line,
+  .schedule-controls {
     grid-template-columns: 1fr;
   }
 
