@@ -8,11 +8,12 @@ import json
 import logging
 import threading
 import zipfile
-from pathlib import Path
 from typing import Any
 
 from ha_autoupgrade.api.supervisor import SupervisorClient
 from ha_autoupgrade.backups.manager import BackupManager
+from ha_autoupgrade.config import AppConfig, DEFAULT_OPTIONS
+from ha_autoupgrade.constants import EXPORT_DIR, IMPORT_DIR, LOCK_FILE, OVERRIDE_OPTIONS_FILE
 from ha_autoupgrade.models import RunSummary, SelfTestResult, SystemSnapshot, UpdateCandidate
 from ha_autoupgrade.notifications.manager import NotificationManager
 from ha_autoupgrade.policies.engine import PolicyEngine
