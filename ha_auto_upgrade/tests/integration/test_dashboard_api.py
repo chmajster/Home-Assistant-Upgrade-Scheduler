@@ -124,6 +124,21 @@ def test_dashboard_homepage_contains_install_day_buttons() -> None:
     assert b"04:30" in response[2]
 
 
+def test_dashboard_homepage_inlines_css_and_resolves_relative_actions() -> None:
+    server = DashboardServer(StubService())
+
+    response = server.handle_request(
+        method="GET",
+        raw_path="/",
+        remote_addr="127.0.0.1",
+    )
+
+    assert response[0] == 200
+    assert b"<style>" in response[2]
+    assert b"--bg-0: #061018;" in response[2]
+    assert b"resolveDashboardUrl" in response[2]
+
+
 def test_dashboard_scoped_install_action_is_available() -> None:
     service = StubService()
     server = DashboardServer(service)

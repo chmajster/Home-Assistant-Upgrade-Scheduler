@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.14
+
+- version bump from 1.0.13 to 1.0.14
+
 ## 1.0.13
 
 - version bump from 1.0.12 to 1.0.13

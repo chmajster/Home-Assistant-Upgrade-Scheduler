@@ -48,10 +48,19 @@ class DashboardServer:
     def _text(self, status: int, payload: str, content_type: str) -> tuple[int, str, bytes]:
         return (status, content_type, payload.encode("utf-8"))
 
+    def _dashboard_css(self) -> str:
+        css_path = self.static_root / "dashboard.css"
+        try:
+            return css_path.read_text(encoding="utf-8")
+        except OSError:
+            self.logger.exception("Failed to read dashboard CSS from %s", css_path)
+            return ""
+
     def _render_dashboard(self, language: str) -> str:
         ui = self.translations.get(language, self.translations["en"])["ui"]
         status = self.service.status()
         health = self.service.health()
+        dashboard_css = self._dashboard_css()
         state = status["state"]
         pending_rows = "".join(
             (
@@ -183,7 +192,9 @@ class DashboardServer:
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{escape(ui['title'])}</title>
-    <link rel="stylesheet" href="/static/dashboard.css">
+    <style>
+{dashboard_css}
+    </style>
   </head>
   <body>
     <div class="background-orb orb-a"></div>
@@ -373,8 +384,20 @@ class DashboardServer:
       </section>
     </main>
     <script>
+      const dashboardBaseUrl = (() => {{
+        const current = new URL(window.location.href);
+        if (!current.pathname.endsWith('/')) {{
+          current.pathname = `${{current.pathname}}/`;
+        }}
+        current.search = '';
+        current.hash = '';
+        return current;
+      }})();
+      function resolveDashboardUrl(path) {{
+        return new URL(path.replace(/^\/+/, ''), dashboardBaseUrl).toString();
+      }}
       async function postAction(url, body = null) {{
-        const response = await fetch(url, {{
+        const response = await fetch(resolveDashboardUrl(url), {{
           method: 'POST',
           headers: {{ 'Content-Type': 'application/json' }},
           body: body ? JSON.stringify(body) : null
@@ -576,8 +599,7 @@ class DashboardServer:
         if method == "GET" and parsed.path == "/api/history":
             return self._json(200, self.service.status()["recent_history"])
         if method == "GET" and parsed.path == "/static/dashboard.css":
-            css = (self.static_root / "dashboard.css").read_text(encoding="utf-8")
-            return self._text(200, css, "text/css; charset=utf-8")
+            return self._text(200, self._dashboard_css(), "text/css; charset=utf-8")
 
         if method == "POST" and parsed.path == "/api/actions/check":
             self.service.enqueue_action("check", "dashboard")
