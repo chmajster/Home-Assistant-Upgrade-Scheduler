@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from ha_autoupgrade.config import AppConfig
+from ha_autoupgrade.constants import DEFAULT_WEEKDAYS
 from ha_autoupgrade.scheduler.triggers import (
     CronTrigger,
     IntervalTrigger,
+    MonthlyDayTimeTrigger,
+    OneTimeTrigger,
     Trigger,
     WeekdaySetTimeTrigger,
     WeekdayTimeTrigger,
@@ -34,6 +37,17 @@ class SchedulerEngine:
                 return WeekdayTimeTrigger(self.config.schedule_check_weekday_time)
             return IntervalTrigger(self.config.schedule_check_interval_minutes)
 
+        if self.config.schedule_install_frequency == "once" and self.config.schedule_install_once_at:
+            return OneTimeTrigger(self.config.schedule_install_once_at)
+        if self.config.schedule_install_frequency == "monthly":
+            return MonthlyDayTimeTrigger(
+                self.config.schedule_install_monthday,
+                self.config.install_hour,
+            )
+        if self.config.schedule_install_frequency == "daily":
+            return WeekdaySetTimeTrigger(DEFAULT_WEEKDAYS, self.config.install_hour)
+        if self.config.schedule_install_frequency == "weekly":
+            return WeekdaySetTimeTrigger(self.config.install_days, self.config.install_hour)
         if self.config.schedule_install_cron:
             return CronTrigger(self.config.schedule_install_cron)
         if self.config.install_days and self.config.install_hour:

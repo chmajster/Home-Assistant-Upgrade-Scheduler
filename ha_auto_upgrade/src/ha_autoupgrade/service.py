@@ -8,12 +8,11 @@ import json
 import logging
 import threading
 import zipfile
+from pathlib import Path
 from typing import Any
 
 from ha_autoupgrade.api.supervisor import SupervisorClient
 from ha_autoupgrade.backups.manager import BackupManager
-from ha_autoupgrade.config import AppConfig
-from ha_autoupgrade.constants import EXPORT_DIR, IMPORT_DIR, LOCK_FILE
 from ha_autoupgrade.models import RunSummary, SelfTestResult, SystemSnapshot, UpdateCandidate
 from ha_autoupgrade.notifications.manager import NotificationManager
 from ha_autoupgrade.policies.engine import PolicyEngine
@@ -25,6 +24,14 @@ from ha_autoupgrade.updates.planner import UpdatePlanner
 from ha_autoupgrade.utils.dates import parse_iso_datetime, to_iso, utc_now
 from ha_autoupgrade.utils.locks import LockAcquisitionError, ProcessLock
 from ha_autoupgrade.utils.system import free_disk_mb, free_memory_mb, load_average_1m, tcp_connectivity
+
+ADDON_OPTION_KEYS = {
+    "check_interval_minutes",
+    "install_days",
+    "install_hour",
+    "auto_install",
+    "create_backup",
+}
 
 
 class AutoUpgradeService:
@@ -182,6 +189,12 @@ class AutoUpgradeService:
                 "schedule_install_cron": self.config.schedule_install_cron,
                 "schedule_check_weekday_time": self.config.schedule_check_weekday_time,
                 "schedule_install_weekday_time": self.config.schedule_install_weekday_time,
+                "schedule_install_frequency": self.config.schedule_install_frequency,
+                "schedule_install_monthday": self.config.schedule_install_monthday,
+                "schedule_install_once_at": self.config.schedule_install_once_at,
+                "schedule_install_time_range_end": self.config.schedule_install_time_range_end,
+                "schedule_allowed_weekdays": sorted(self.config.schedule_allowed_weekdays),
+                "maintenance_window": self.config.maintenance_window,
                 "schedule_jitter_seconds": self.config.schedule_jitter_seconds,
             },
             sort_keys=True,
@@ -586,10 +599,31 @@ class AutoUpgradeService:
         incoming_options = payload.get("options", payload)
         options = self.config.to_options_dict(redact_secrets=False)
         options.update(incoming_options)
-        validation = self.client.validate_addon_options("self", options)
+        frequency = str(options.get("schedule_install_frequency") or "")
+        once_at = parse_iso_datetime(str(options.get("schedule_install_once_at") or ""))
+        if frequency == "once":
+            if once_at is None:
+                raise ValueError("One-time schedule requires a valid date and time")
+            if once_at <= utc_now():
+                raise ValueError("One-time schedule must be in the future")
+
+        addon_options = {key: options[key] for key in ADDON_OPTION_KEYS if key in options}
+        override_options = {
+            key: value
+            for key, value in options.items()
+            if key not in ADDON_OPTION_KEYS and (key not in DEFAULT_OPTIONS or DEFAULT_OPTIONS[key] != value)
+        }
+
+        validation = self.client.validate_addon_options("self", addon_options)
         if not validation.get("valid", False):
             raise ValueError(validation.get("message", "Configuration validation failed"))
-        self.client.set_addon_options("self", options)
+        self.client.set_addon_options("self", addon_options)
+        override_path = self.config.data_dir / OVERRIDE_OPTIONS_FILE.name
+        override_path.parent.mkdir(parents=True, exist_ok=True)
+        if override_options:
+            override_path.write_text(json.dumps(override_options, indent=2), encoding="utf-8")
+        elif override_path.exists():
+            override_path.unlink()
         IMPORT_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
         path = IMPORT_DIR / f"imported-options-{timestamp}.json"

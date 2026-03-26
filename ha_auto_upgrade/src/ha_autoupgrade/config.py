@@ -17,14 +17,16 @@ from ha_autoupgrade.constants import (
     OVERRIDE_OPTIONS_FILE,
 )
 from ha_autoupgrade.models import ActionCall
-from ha_autoupgrade.utils.dates import parse_hhmm
+from ha_autoupgrade.utils.dates import parse_hhmm, parse_iso_datetime
 from ha_autoupgrade.utils.versioning import parse_mapping_entries
 
 VALID_UPDATE_STRATEGIES = {"addons_last", "addons_first", "core_first"}
 VALID_BACKUP_MODES = {"full", "partial"}
 VALID_LOG_LEVELS = {"debug", "info", "warning", "error"}
+VALID_SCHEDULE_FREQUENCIES = {"", "daily", "weekly", "monthly", "once"}
 VALID_WEEKDAYS = set(DEFAULT_WEEKDAYS)
 VALID_UPDATE_TYPES = {"core", "supervisor", "os", "addons"}
+FULL_DAY_MAINTENANCE_WINDOW = "00:00-23:59"
 WEEKDAY_ALIASES = {
     "mon": "mon",
     "monday": "mon",
@@ -58,6 +60,21 @@ WEEKDAY_ALIASES = {
 }
 ALL_DAYS_TOKENS = {"all", "daily", "everyday", "codziennie", "wszystkie"}
 DEFAULT_FALLBACK_TOKENS = {"*", "default", "auto"}
+SCHEDULE_FREQUENCY_ALIASES = {
+    "daily": "daily",
+    "day": "daily",
+    "codziennie": "daily",
+    "weekly": "weekly",
+    "week": "weekly",
+    "tygodniowo": "weekly",
+    "monthly": "monthly",
+    "month": "monthly",
+    "miesiecznie": "monthly",
+    "once": "once",
+    "onetime": "once",
+    "one-time": "once",
+    "jednorazowo": "once",
+}
 
 
 class ConfigError(ValueError):
@@ -68,6 +85,10 @@ DEFAULT_OPTIONS: dict[str, Any] = {
     "check_interval_minutes": 60,
     "install_days": "sun",
     "install_hour": "03:00",
+    "schedule_install_frequency": "",
+    "schedule_install_monthday": 1,
+    "schedule_install_once_at": "",
+    "schedule_install_time_range_end": "",
     "auto_install": False,
     "create_backup": True,
     "log_level": "info",
@@ -188,6 +209,68 @@ def _normalize_install_hour(value: Any, field_name: str) -> str:
     return f"{parsed.hour:02d}:{parsed.minute:02d}"
 
 
+def _normalize_schedule_frequency(
+    value: Any,
+    *,
+    install_days: tuple[str, ...],
+    schedule_install_cron: str,
+    schedule_install_once_at: str,
+) -> str:
+    folded = _ascii_fold(str(value or ""))
+    if not folded or folded in DEFAULT_FALLBACK_TOKENS:
+        if schedule_install_once_at:
+            return "once"
+        if schedule_install_cron:
+            return ""
+        return "daily" if tuple(install_days) == tuple(DEFAULT_WEEKDAYS) else "weekly"
+    frequency = SCHEDULE_FREQUENCY_ALIASES.get(folded)
+    if frequency is None:
+        raise ConfigError(f"Unsupported schedule_install_frequency: {value}")
+    return frequency
+
+
+def _normalize_schedule_monthday(value: Any) -> int:
+    raw = str(value or "").strip()
+    if not raw or _ascii_fold(raw) in DEFAULT_FALLBACK_TOKENS:
+        return 1
+    try:
+        day = int(raw)
+    except ValueError as err:
+        raise ConfigError(f"Invalid schedule_install_monthday: {value}") from err
+    if day < 1 or day > 31:
+        raise ConfigError("schedule_install_monthday must be between 1 and 31")
+    return day
+
+
+def _normalize_schedule_once_at(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw or _ascii_fold(raw) in DEFAULT_FALLBACK_TOKENS:
+        return ""
+    parsed = parse_iso_datetime(raw)
+    if parsed is None:
+        return ""
+    return parsed.isoformat()
+
+
+def _infer_time_range_end(
+    explicit_end: Any,
+    maintenance_window: Any,
+    install_hour: str,
+) -> str:
+    normalized_end = _normalize_install_hour(explicit_end, "schedule_install_time_range_end")
+    if normalized_end:
+        return normalized_end
+    raw_window = str(maintenance_window or "").strip()
+    if not raw_window or raw_window == FULL_DAY_MAINTENANCE_WINDOW or "-" not in raw_window:
+        return ""
+    start_raw, end_raw = raw_window.split("-", maxsplit=1)
+    normalized_start = _normalize_install_hour(start_raw, "maintenance_window")
+    normalized_end = _normalize_install_hour(end_raw, "maintenance_window")
+    if normalized_start == install_hour and normalized_end != install_hour:
+        return normalized_end
+    return ""
+
+
 def _split_legacy_weekday_time(value: str) -> tuple[str, str]:
     if _ascii_fold(value) in DEFAULT_FALLBACK_TOKENS:
         return "", ""
@@ -223,6 +306,10 @@ class AppConfig:
     check_interval_minutes: int = 60
     install_days: tuple[str, ...] = field(default_factory=lambda: ("sun",))
     install_hour: str = "03:00"
+    schedule_install_frequency: str = ""
+    schedule_install_monthday: int = 1
+    schedule_install_once_at: str = ""
+    schedule_install_time_range_end: str = ""
     auto_install: bool = False
     create_backup: bool = True
     log_level: str = "info"
@@ -325,6 +412,19 @@ class AppConfig:
             install_days = _parse_install_days(DEFAULT_OPTIONS["install_days"], "install_days")
         if not install_hour:
             install_hour = _normalize_install_hour(DEFAULT_OPTIONS["install_hour"], "install_hour")
+        schedule_install_once_at = _normalize_schedule_once_at(merged["schedule_install_once_at"])
+        schedule_install_frequency = _normalize_schedule_frequency(
+            merged["schedule_install_frequency"],
+            install_days=install_days,
+            schedule_install_cron=str(merged["schedule_install_cron"] or ""),
+            schedule_install_once_at=schedule_install_once_at,
+        )
+        schedule_install_monthday = _normalize_schedule_monthday(merged["schedule_install_monthday"])
+        schedule_install_time_range_end = _infer_time_range_end(
+            merged["schedule_install_time_range_end"],
+            merged["maintenance_window"],
+            install_hour,
+        )
 
         log_level = str(merged["log_level"]).lower()
         if log_level not in VALID_LOG_LEVELS:
@@ -346,7 +446,7 @@ class AppConfig:
             allowed_weekdays = set(
                 _parse_install_days(merged["schedule_allowed_weekdays"], "schedule_allowed_weekdays")
             )
-        elif install_days:
+        elif schedule_install_frequency == "weekly" and install_days:
             allowed_weekdays = set(install_days)
         else:
             allowed_weekdays = set(DEFAULT_WEEKDAYS)
@@ -355,6 +455,10 @@ class AppConfig:
 
         merged["install_days"] = ",".join(install_days) if install_days else ""
         merged["install_hour"] = install_hour
+        merged["schedule_install_frequency"] = schedule_install_frequency
+        merged["schedule_install_monthday"] = schedule_install_monthday
+        merged["schedule_install_once_at"] = schedule_install_once_at
+        merged["schedule_install_time_range_end"] = schedule_install_time_range_end
         merged["schedule_allowed_weekdays"] = list(allowed_weekdays)
         merged["schedule_install_weekday_time"] = (
             f"{install_days[0]}@{install_hour}" if len(install_days) == 1 and install_hour else ""
@@ -377,6 +481,10 @@ class AppConfig:
             check_interval_minutes=int(merged["check_interval_minutes"]),
             install_days=install_days or tuple(DEFAULT_WEEKDAYS),
             install_hour=install_hour or DEFAULT_OPTIONS["install_hour"],
+            schedule_install_frequency=schedule_install_frequency,
+            schedule_install_monthday=schedule_install_monthday,
+            schedule_install_once_at=schedule_install_once_at,
+            schedule_install_time_range_end=schedule_install_time_range_end,
             auto_install=bool(merged["auto_install"]),
             create_backup=bool(merged["create_backup"]),
             log_level=log_level,
@@ -490,6 +598,18 @@ class AppConfig:
             raise ConfigError("check_interval_minutes must be > 0")
         if self.install_days and not self.install_hour:
             raise ConfigError("install_hour must be set when install_days are configured")
+        if self.schedule_install_frequency not in VALID_SCHEDULE_FREQUENCIES:
+            raise ConfigError(f"Unsupported schedule_install_frequency: {self.schedule_install_frequency}")
+        if self.schedule_install_frequency == "weekly" and not self.install_days:
+            raise ConfigError("install_days must be set for weekly schedules")
+        if self.schedule_install_frequency == "monthly" and not 1 <= self.schedule_install_monthday <= 31:
+            raise ConfigError("schedule_install_monthday must be between 1 and 31")
+        if self.schedule_install_frequency == "once" and not self.schedule_install_once_at:
+            raise ConfigError("schedule_install_once_at must be set for one-time schedules")
+        if self.schedule_install_once_at:
+            parse_iso_datetime(self.schedule_install_once_at)
+        if self.schedule_install_time_range_end:
+            _normalize_install_hour(self.schedule_install_time_range_end, "schedule_install_time_range_end")
         if self.smtp_enabled and (not self.smtp_host or not self.smtp_from or not self.smtp_to):
             raise ConfigError("SMTP is enabled but smtp_host/smtp_from/smtp_to are incomplete")
 
@@ -518,9 +638,10 @@ class AppConfig:
 
 def load_config(data_dir: Path = DATA_DIR) -> AppConfig:
     options_path = data_dir / "options.json"
+    override_path = data_dir / OVERRIDE_OPTIONS_FILE.name
     payload: dict[str, Any] = {}
     if options_path.exists():
         payload.update(json.loads(options_path.read_text(encoding="utf-8")))
-    if OVERRIDE_OPTIONS_FILE.exists():
-        payload.update(json.loads(OVERRIDE_OPTIONS_FILE.read_text(encoding="utf-8")))
+    if override_path.exists():
+        payload.update(json.loads(override_path.read_text(encoding="utf-8")))
     return AppConfig.from_dict(payload, data_dir=data_dir)
