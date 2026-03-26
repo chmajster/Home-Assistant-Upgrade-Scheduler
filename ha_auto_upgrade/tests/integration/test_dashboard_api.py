@@ -135,7 +135,7 @@ def test_dashboard_homepage_inlines_css_and_resolves_relative_actions() -> None:
 
     assert response[0] == 200
     assert b"<style>" in response[2]
-    assert b"--bg-0: #061018;" in response[2]
+    assert b".page-header" in response[2]
     assert b"resolveDashboardUrl" in response[2]
 
 

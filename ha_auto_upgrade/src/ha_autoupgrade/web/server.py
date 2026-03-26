@@ -185,6 +185,7 @@ class DashboardServer:
                 "once": ui["schedule_days_hint_once"],
             }
         )
+        advanced_actions_label = "Akcje zaawansowane" if language == "pl" else "Advanced actions"
 
         return f"""<!doctype html>
 <html lang="{escape(language)}">
@@ -197,22 +198,20 @@ class DashboardServer:
     </style>
   </head>
   <body>
-    <div class="background-orb orb-a"></div>
-    <div class="background-orb orb-b"></div>
     <main class="layout">
-      <section class="hero">
-        <div>
+      <header class="page-header card">
+        <div class="header-main">
           <p class="eyebrow">{escape(ui['eyebrow'])}</p>
           <h1>{escape(ui['title'])}</h1>
           <p class="lead">{escape(ui['subtitle'])}</p>
         </div>
-        <div class="hero-actions">
+        <div class="button-row primary-actions">
           <button onclick="postAction('/api/actions/check')">{escape(ui['check_now'])}</button>
-          <button class="accent" onclick="postAction('/api/actions/update')">{escape(ui['update_now'])}</button>
           <button class="accent" onclick="postAction('/api/actions/check-install')">{escape(ui['check_install_now'])}</button>
+          <button class="accent" onclick="postAction('/api/actions/update')">{escape(ui['update_now'])}</button>
         </div>
-      </section>
-      <section class="card-grid">
+      </header>
+      <section class="status-grid">
         <article class="card metric-card">
           <p class="metric-label">{escape(ui['health'])}</p>
           <h2 class="{health_class}">{escape(health_label)}</h2>
@@ -241,102 +240,116 @@ class DashboardServer:
             <h3>{escape(ui['actions'])}</h3>
             <p>{escape(ui['actions_hint'])}</p>
           </div>
-          <div class="action-grid">
-            <button class="accent" onclick="postAction('/api/actions/update/core')">{escape(ui['update_core_now'])}</button>
-            <button class="accent" onclick="postAction('/api/actions/update/supervisor')">{escape(ui['update_supervisor_now'])}</button>
-            <button class="accent" onclick="postAction('/api/actions/update/os')">{escape(ui['update_os_now'])}</button>
-            <button class="accent" onclick="postAction('/api/actions/update/addons')">{escape(ui['update_addons_now'])}</button>
+          <div class="button-row quick-actions">
             <button onclick="postAction('/api/actions/backup')">{escape(ui['backup_now'])}</button>
             <button onclick="postAction('/api/actions/retry')">{escape(ui['retry_failed'])}</button>
             <button onclick="postAction('/api/actions/clear')">{escape(ui['clear_stuck'])}</button>
-            <button onclick="postAction('/api/actions/export')">{escape(ui['export_diag'])}</button>
-            <button onclick="postAction('/api/actions/self-test')">{escape(ui['self_test'])}</button>
           </div>
-          <div class="schedule-box">
-            <div class="schedule-header">
-              <h4>{escape(ui['schedule_panel_title'])}</h4>
-              <p>{escape(ui['schedule_panel_hint'])}</p>
-            </div>
-            <div class="schedule-section">
-              <div class="section-copy">
-                <h5>{escape(ui['schedule_mode'])}</h5>
-              </div>
-              <div class="schedule-choice-group">
-                <button
-                  type="button"
-                  id="mode-daily"
-                  class="schedule-choice{' is-selected' if schedule_mode == 'daily' else ''}"
-                  onclick="setScheduleMode('daily')"
-                >{escape(ui['schedule_mode_daily'])}</button>
-                <button
-                  type="button"
-                  id="mode-weekly"
-                  class="schedule-choice{' is-selected' if schedule_mode == 'weekly' else ''}"
-                  onclick="setScheduleMode('weekly')"
-                >{escape(ui['schedule_mode_weekly'])}</button>
-                <button
-                  type="button"
-                  id="mode-once"
-                  class="schedule-choice{' is-selected' if schedule_mode == 'once' else ''}"
-                  onclick="setScheduleMode('once')"
-                >{escape(ui['schedule_mode_once'])}</button>
+          <details class="section-toggle">
+            <summary>{escape(advanced_actions_label)}</summary>
+            <div class="toggle-body">
+              <div class="action-grid">
+                <button class="accent" onclick="postAction('/api/actions/update/core')">{escape(ui['update_core_now'])}</button>
+                <button class="accent" onclick="postAction('/api/actions/update/supervisor')">{escape(ui['update_supervisor_now'])}</button>
+                <button class="accent" onclick="postAction('/api/actions/update/os')">{escape(ui['update_os_now'])}</button>
+                <button class="accent" onclick="postAction('/api/actions/update/addons')">{escape(ui['update_addons_now'])}</button>
+                <button onclick="postAction('/api/actions/export')">{escape(ui['export_diag'])}</button>
+                <button onclick="postAction('/api/actions/self-test')">{escape(ui['self_test'])}</button>
               </div>
             </div>
-            <div class="schedule-section">
-              <div class="section-copy">
-                <h5>{escape(ui['schedule_days'])}</h5>
-                <p id="schedule-days-hint"></p>
-              </div>
-              <div id="weekly-day-picker" class="day-toggle-group"{' hidden' if schedule_frequency != 'weekly' else ''}>{day_buttons}</div>
-              <div id="monthly-day-field" class="field-group"{' hidden' if schedule_frequency != 'monthly' else ''}>
-                <label for="schedule-monthday">{escape(ui['schedule_month_day'])}</label>
-                <input id="schedule-monthday" type="number" min="1" max="31" value="{schedule_monthday}">
-              </div>
-              <div id="once-date-field" class="field-group"{' hidden' if schedule_frequency != 'once' else ''}>
-                <label for="schedule-once-date">{escape(ui['schedule_once_date'])}</label>
-                <input id="schedule-once-date" type="date" value="{escape(once_date)}">
-              </div>
-            </div>
-            <div class="schedule-section">
-              <div class="section-copy">
-                <h5>{escape(ui['schedule_time'])}</h5>
-                <p>{escape(ui['schedule_time_hint'])}</p>
-              </div>
-              <div class="schedule-choice-group compact">
-                <button type="button" id="time-mode-point" class="schedule-choice" onclick="setTimeMode(false)">{escape(ui['schedule_exact_time'])}</button>
-                <button type="button" id="time-mode-range" class="schedule-choice" onclick="setTimeMode(true)">{escape(ui['schedule_time_range'])}</button>
-              </div>
-              <div class="schedule-controls">
-                <div class="field-group">
-                  <label for="install-hour">{escape(ui['install_time'])}</label>
-                  <input id="install-hour" type="time" value="{escape(schedule_time_value)}">
+          </details>
+          <details class="section-toggle" open>
+            <summary>{escape(ui['schedule_panel_title'])}</summary>
+            <div class="toggle-body">
+              <p class="section-note">{escape(ui['schedule_panel_hint'])}</p>
+              <div class="schedule-box">
+                <div class="schedule-section">
+                  <div class="section-copy">
+                    <h5>{escape(ui['schedule_mode'])}</h5>
+                  </div>
+                  <div class="schedule-choice-group">
+                    <button
+                      type="button"
+                      id="mode-daily"
+                      class="schedule-choice{' is-selected' if schedule_mode == 'daily' else ''}"
+                      onclick="setScheduleMode('daily')"
+                    >{escape(ui['schedule_mode_daily'])}</button>
+                    <button
+                      type="button"
+                      id="mode-weekly"
+                      class="schedule-choice{' is-selected' if schedule_mode == 'weekly' else ''}"
+                      onclick="setScheduleMode('weekly')"
+                    >{escape(ui['schedule_mode_weekly'])}</button>
+                    <button
+                      type="button"
+                      id="mode-once"
+                      class="schedule-choice{' is-selected' if schedule_mode == 'once' else ''}"
+                      onclick="setScheduleMode('once')"
+                    >{escape(ui['schedule_mode_once'])}</button>
+                  </div>
                 </div>
-                <div id="schedule-end-field" class="field-group"{' hidden' if not schedule_range_end or schedule_frequency == 'once' else ''}>
-                  <label for="schedule-end-time">{escape(ui['schedule_window_end'])}</label>
-                  <input id="schedule-end-time" type="time" value="{escape(schedule_range_end)}">
+                <div class="schedule-section">
+                  <div class="section-copy">
+                    <h5>{escape(ui['schedule_days'])}</h5>
+                    <p id="schedule-days-hint"></p>
+                  </div>
+                  <div id="weekly-day-picker" class="day-toggle-group"{' hidden' if schedule_frequency != 'weekly' else ''}>{day_buttons}</div>
+                  <div id="monthly-day-field" class="field-group"{' hidden' if schedule_frequency != 'monthly' else ''}>
+                    <label for="schedule-monthday">{escape(ui['schedule_month_day'])}</label>
+                    <input id="schedule-monthday" type="number" min="1" max="31" value="{schedule_monthday}">
+                  </div>
+                  <div id="once-date-field" class="field-group"{' hidden' if schedule_frequency != 'once' else ''}>
+                    <label for="schedule-once-date">{escape(ui['schedule_once_date'])}</label>
+                    <input id="schedule-once-date" type="date" value="{escape(once_date)}">
+                  </div>
+                </div>
+                <div class="schedule-section">
+                  <div class="section-copy">
+                    <h5>{escape(ui['schedule_time'])}</h5>
+                    <p>{escape(ui['schedule_time_hint'])}</p>
+                  </div>
+                  <div class="schedule-choice-group compact">
+                    <button type="button" id="time-mode-point" class="schedule-choice" onclick="setTimeMode(false)">{escape(ui['schedule_exact_time'])}</button>
+                    <button type="button" id="time-mode-range" class="schedule-choice" onclick="setTimeMode(true)">{escape(ui['schedule_time_range'])}</button>
+                  </div>
+                  <div class="schedule-controls">
+                    <div class="field-group">
+                      <label for="install-hour">{escape(ui['install_time'])}</label>
+                      <input id="install-hour" type="time" value="{escape(schedule_time_value)}">
+                    </div>
+                    <div id="schedule-end-field" class="field-group"{' hidden' if not schedule_range_end or schedule_frequency == 'once' else ''}>
+                      <label for="schedule-end-time">{escape(ui['schedule_window_end'])}</label>
+                      <input id="schedule-end-time" type="time" value="{escape(schedule_range_end)}">
+                    </div>
+                  </div>
+                </div>
+                <div class="schedule-section">
+                  <div class="section-copy">
+                    <h5>{escape(ui['schedule_frequency'])}</h5>
+                    <p id="schedule-frequency-hint"></p>
+                  </div>
+                  <div class="schedule-choice-group">
+                    <button type="button" id="frequency-daily" class="schedule-choice" onclick="setScheduleFrequency('daily')">{escape(ui['schedule_frequency_daily'])}</button>
+                    <button type="button" id="frequency-weekly" class="schedule-choice" onclick="setScheduleFrequency('weekly')">{escape(ui['schedule_frequency_weekly'])}</button>
+                    <button type="button" id="frequency-monthly" class="schedule-choice" onclick="setScheduleFrequency('monthly')">{escape(ui['schedule_frequency_monthly'])}</button>
+                  </div>
+                </div>
+                <div class="schedule-actions">
+                  <button class="accent" onclick="saveInstallSchedule()">{escape(ui['save_install_schedule'])}</button>
                 </div>
               </div>
             </div>
-            <div class="schedule-section">
-              <div class="section-copy">
-                <h5>{escape(ui['schedule_frequency'])}</h5>
-                <p id="schedule-frequency-hint"></p>
-              </div>
-              <div class="schedule-choice-group">
-                <button type="button" id="frequency-daily" class="schedule-choice" onclick="setScheduleFrequency('daily')">{escape(ui['schedule_frequency_daily'])}</button>
-                <button type="button" id="frequency-weekly" class="schedule-choice" onclick="setScheduleFrequency('weekly')">{escape(ui['schedule_frequency_weekly'])}</button>
-                <button type="button" id="frequency-monthly" class="schedule-choice" onclick="setScheduleFrequency('monthly')">{escape(ui['schedule_frequency_monthly'])}</button>
+          </details>
+          <details class="section-toggle">
+            <summary>{escape(ui['import_config'])}</summary>
+            <div class="toggle-body">
+              <div class="import-box">
+                <label for="import-options">{escape(ui['import_config'])}</label>
+                <textarea id="import-options" rows="8" placeholder='{{"log_level":"debug"}}'></textarea>
+                <button class="accent" onclick="importOptions()">{escape(ui['import_apply'])}</button>
               </div>
             </div>
-            <div class="schedule-actions">
-              <button class="accent" onclick="saveInstallSchedule()">{escape(ui['save_install_schedule'])}</button>
-            </div>
-          </div>
-          <div class="import-box">
-            <label for="import-options">{escape(ui['import_config'])}</label>
-            <textarea id="import-options" rows="8" placeholder='{{"log_level":"debug"}}'></textarea>
-            <button class="accent" onclick="importOptions()">{escape(ui['import_apply'])}</button>
-          </div>
+          </details>
           <p id="action-result" class="result-note"></p>
           <div class="detail-grid">
             <div>

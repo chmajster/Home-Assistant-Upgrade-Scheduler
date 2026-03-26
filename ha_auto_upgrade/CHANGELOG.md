@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.16
+
+- simplified the dashboard layout to a plain single-flow view with basic actions at the top
+- moved advanced actions and config import into collapsible sections to reduce visual noise
+- replaced the decorative dashboard theme with a simpler, neutral operator UI
+- version bump from 1.0.15 to 1.0.16
+
 ## 1.0.15
 
 - switched scheduled/manual refreshes from `POST /reload_updates` to the add-on-safe `POST /refresh_updates` flow
