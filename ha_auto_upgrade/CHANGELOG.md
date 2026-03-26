@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.9
+
+- human-readable add-on logs now start with an explicit date and time prefix
+- version bump from 1.0.8 to 1.0.9
+
 ## 1.0.8
 
 - fixed startup crash when legacy saved options contain wildcard values such as `install_hour: "*"`
