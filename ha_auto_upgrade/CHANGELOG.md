@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.10
+
+- fixed add-on startup crash caused by `SupervisorClient` using `slots=True` without declaring the internal `_headers` field
+- version bump from 1.0.9 to 1.0.10
+
 ## 1.0.9
 
 - human-readable add-on logs now start with an explicit date and time prefix

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import logging
 import os
@@ -25,6 +25,7 @@ class SupervisorClient:
     timeout_seconds: int = 30
     max_attempts: int = 4
     backoff_seconds: int = 2
+    _headers: dict[str, str] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         token = os.getenv("SUPERVISOR_TOKEN", "")
