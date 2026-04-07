@@ -7,14 +7,29 @@ from datetime import timedelta
 import json
 import logging
 import threading
+import re
+from uuid import uuid4
 import zipfile
 from typing import Any
 
 from ha_autoupgrade.api.supervisor import SupervisorClient
 from ha_autoupgrade.backups.manager import BackupManager
 from ha_autoupgrade.config import AppConfig, DEFAULT_OPTIONS
-from ha_autoupgrade.constants import EXPORT_DIR, IMPORT_DIR, LOCK_FILE, OVERRIDE_OPTIONS_FILE
-from ha_autoupgrade.models import RunSummary, SelfTestResult, SystemSnapshot, UpdateCandidate
+from ha_autoupgrade.constants import (
+    DEFAULT_WEEKDAYS,
+    EXPORT_DIR,
+    IMPORT_DIR,
+    LOCK_FILE,
+    OVERRIDE_OPTIONS_FILE,
+)
+from ha_autoupgrade.models import (
+    TASK_TYPE_ACTIONS,
+    ScheduleTask,
+    RunSummary,
+    SelfTestResult,
+    SystemSnapshot,
+    UpdateCandidate,
+)
 from ha_autoupgrade.notifications.manager import NotificationManager
 from ha_autoupgrade.policies.engine import PolicyEngine
 from ha_autoupgrade.scheduler.engine import SchedulerEngine
@@ -33,6 +48,46 @@ ADDON_OPTION_KEYS = {
     "auto_install",
     "create_backup",
 }
+
+TASK_TYPE_SEQUENCE = {
+    "auto_check_update": 0,
+    "auto_update": 1,
+}
+
+WEEKDAY_TOKEN_MAP = {
+    "mon": "mon",
+    "monday": "mon",
+    "pon": "mon",
+    "poniedzialek": "mon",
+    "tue": "tue",
+    "tuesday": "tue",
+    "wt": "tue",
+    "wtorek": "tue",
+    "wed": "wed",
+    "wednesday": "wed",
+    "sr": "wed",
+    "sroda": "wed",
+    "thu": "thu",
+    "thursday": "thu",
+    "czw": "thu",
+    "czwartek": "thu",
+    "fri": "fri",
+    "friday": "fri",
+    "pt": "fri",
+    "piatek": "fri",
+    "sat": "sat",
+    "saturday": "sat",
+    "sob": "sat",
+    "sobota": "sat",
+    "sun": "sun",
+    "sunday": "sun",
+    "nd": "sun",
+    "ndz": "sun",
+    "niedziela": "sun",
+}
+
+TRUE_TOKENS = {"1", "true", "yes", "on", "enabled", "tak"}
+FALSE_TOKENS = {"0", "false", "no", "off", "disabled", "nie"}
 
 
 class AutoUpgradeService:
@@ -135,6 +190,25 @@ class AutoUpgradeService:
             return
 
         state = self.state_store.read()
+        due_task = self._select_due_schedule_task(state)
+        if due_task is not None:
+            task_type = str(due_task.get("task_type"))
+            action_name = TASK_TYPE_ACTIONS.get(task_type)
+            if action_name is not None:
+                self.logger.info(
+                    "Dispatching scheduled task '%s' (%s) as action '%s'",
+                    due_task.get("id"),
+                    task_type,
+                    action_name,
+                )
+                self._dispatch(action_name, f"schedule_task:{task_type}", {})
+                self._advance_schedule_task(str(due_task.get("id", "")))
+                return
+
+        scheduled_tasks = state.get("scheduled_tasks", [])
+        if isinstance(scheduled_tasks, list) and scheduled_tasks:
+            return
+
         due = self.scheduler.due_actions(state)
         for action_name in due:
             if action_name == "install" and not self.config.auto_install:
@@ -201,8 +275,354 @@ class AutoUpgradeService:
             sort_keys=True,
         )
 
+    def _task_sort_key(self, task: dict[str, Any]) -> tuple[int, str]:
+        task_type = str(task.get("task_type", ""))
+        return (TASK_TYPE_SEQUENCE.get(task_type, 99), str(task.get("id", "")))
+
+    def _task_to_state_payload(self, task: ScheduleTask) -> dict[str, Any]:
+        return {
+            "id": task.task_id,
+            "task_type": task.task_type,
+            "weekdays": list(task.weekdays),
+            "hour": task.hour,
+            "minute": task.minute,
+            "enabled": task.enabled,
+            "next_run": task.next_run,
+            "category": task.category,
+            "owner": task.owner,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+        }
+
+    def _normalize_task_type(self, value: Any) -> str:
+        token = re.sub(r"[^a-z]+", "_", str(value or "").strip().lower()).strip("_")
+        aliases = {
+            "auto_update": "auto_update",
+            "autoupdate": "auto_update",
+            "auto_install": "auto_update",
+            "auto_check_update": "auto_check_update",
+            "autocheckupdate": "auto_check_update",
+            "auto_check": "auto_check_update",
+            "check_update": "auto_check_update",
+        }
+        normalized = aliases.get(token, token)
+        if normalized not in TASK_TYPE_ACTIONS:
+            raise ValueError("Nieobslugiwany typ zadania")
+        return normalized
+
+    def _normalize_task_weekdays(self, value: Any) -> tuple[str, ...]:
+        if isinstance(value, str):
+            raw_tokens = re.split(r"[\s,;]+", value.strip())
+        elif isinstance(value, (list, tuple, set)):
+            raw_tokens = [str(item) for item in value]
+        else:
+            raise ValueError("Pole weekdays musi byc lista lub tekstem")
+
+        selected: list[str] = []
+        for token in raw_tokens:
+            folded = re.sub(r"[^a-z]", "", token.strip().lower())
+            if not folded:
+                continue
+            day = WEEKDAY_TOKEN_MAP.get(folded)
+            if day is None:
+                raise ValueError(f"Nieprawidlowy dzien tygodnia: {token}")
+            if day not in selected:
+                selected.append(day)
+
+        if not selected:
+            raise ValueError("Wybierz co najmniej jeden dzien tygodnia")
+        return tuple(day for day in DEFAULT_WEEKDAYS if day in selected)
+
+    def _normalize_task_int(
+        self,
+        value: Any,
+        *,
+        field_name: str,
+        minimum: int,
+        maximum: int,
+        default: int | None = None,
+    ) -> int:
+        if value is None or value == "":
+            if default is not None:
+                return default
+            raise ValueError(f"Pole {field_name} jest wymagane")
+        try:
+            parsed = int(str(value).strip())
+        except ValueError as err:
+            raise ValueError(f"Pole {field_name} musi byc liczba") from err
+        if parsed < minimum or parsed > maximum:
+            raise ValueError(f"Pole {field_name} musi byc w zakresie {minimum}-{maximum}")
+        return parsed
+
+    def _normalize_task_enabled(self, value: Any, *, default: bool) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(int(value))
+        token = str(value).strip().lower()
+        if token in TRUE_TOKENS:
+            return True
+        if token in FALSE_TOKENS:
+            return False
+        raise ValueError("Pole enabled musi byc wartoscia logiczna")
+
+    def _schedule_task_from_payload(
+        self,
+        payload: dict[str, Any],
+        *,
+        existing: dict[str, Any] | None = None,
+    ) -> ScheduleTask:
+        existing_model = ScheduleTask.from_dict(existing) if existing else None
+        task_type = self._normalize_task_type(
+            payload.get("task_type", existing_model.task_type if existing_model else "")
+        )
+        weekdays = self._normalize_task_weekdays(
+            payload.get("weekdays", existing_model.weekdays if existing_model else [])
+        )
+        hour = self._normalize_task_int(
+            payload.get("hour", existing_model.hour if existing_model else None),
+            field_name="hour",
+            minimum=0,
+            maximum=23,
+        )
+        minute = self._normalize_task_int(
+            payload.get("minute", existing_model.minute if existing_model else 0),
+            field_name="minute",
+            minimum=0,
+            maximum=59,
+            default=0,
+        )
+        enabled = self._normalize_task_enabled(
+            payload.get("enabled"),
+            default=existing_model.enabled if existing_model else True,
+        )
+        now_iso = utc_now().isoformat()
+        task = ScheduleTask(
+            task_id=str(
+                payload.get("id")
+                or (existing_model.task_id if existing_model else "")
+                or uuid4().hex
+            ),
+            task_type=task_type,
+            weekdays=weekdays,
+            hour=hour,
+            minute=minute,
+            enabled=enabled,
+            next_run=(
+                existing_model.next_run
+                if existing_model
+                else (str(payload.get("next_run")) if payload.get("next_run") else None)
+            ),
+            category=str(payload.get("category") or (existing_model.category if existing_model else "System")),
+            owner=str(payload.get("owner") or (existing_model.owner if existing_model else "HA AutoUpgrade")),
+            created_at=(
+                existing_model.created_at
+                if existing_model
+                else (str(payload.get("created_at")) if payload.get("created_at") else now_iso)
+            ),
+            updated_at=(
+                now_iso
+                if existing_model
+                else (str(payload.get("updated_at")) if payload.get("updated_at") else now_iso)
+            ),
+        )
+        task.validate()
+        return task
+
+    def _normalize_state_tasks(self, raw_tasks: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw_tasks, list):
+            return []
+
+        normalized: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for raw_task in raw_tasks:
+            if not isinstance(raw_task, dict):
+                continue
+            try:
+                task = self._schedule_task_from_payload(raw_task)
+            except ValueError as err:
+                self.logger.warning("Skipping invalid schedule task payload: %s", err)
+                continue
+            if task.task_id in seen_ids:
+                continue
+            next_run = parse_iso_datetime(task.next_run) if task.next_run else None
+            if task.enabled and next_run is None:
+                task.next_run = to_iso(self.scheduler.compute_task_next(self._task_to_state_payload(task)))
+            if not task.enabled:
+                task.next_run = None
+            seen_ids.add(task.task_id)
+            normalized.append(self._task_to_state_payload(task))
+
+        normalized.sort(key=self._task_sort_key)
+        return normalized
+
+    def _next_runs_from_tasks(self, tasks: list[dict[str, Any]]) -> tuple[str | None, str | None]:
+        next_check_values = []
+        next_install_values = []
+        for task in tasks:
+            if not task.get("enabled", True):
+                continue
+            parsed = parse_iso_datetime(task.get("next_run")) if task.get("next_run") else None
+            if parsed is None:
+                continue
+            if task.get("task_type") == "auto_check_update":
+                next_check_values.append(parsed)
+            elif task.get("task_type") == "auto_update":
+                next_install_values.append(parsed)
+
+        return (
+            to_iso(min(next_check_values)) if next_check_values else None,
+            to_iso(min(next_install_values)) if next_install_values else None,
+        )
+
+    def _persist_schedule_tasks(self, tasks: list[dict[str, Any]]) -> None:
+        ordered = sorted(tasks, key=self._task_sort_key)
+        next_check, next_install = self._next_runs_from_tasks(ordered)
+
+        def _update(state: dict[str, Any]) -> None:
+            state["scheduled_tasks"] = ordered
+            state["next_check"] = next_check
+            state["next_install"] = next_install
+
+        self.state_store.update(_update)
+
+    def _validate_task_dependencies(self, tasks: list[dict[str, Any]]) -> None:
+        auto_update_enabled = any(
+            task.get("task_type") == "auto_update" and bool(task.get("enabled", True))
+            for task in tasks
+        )
+        auto_check_enabled = any(
+            task.get("task_type") == "auto_check_update" and bool(task.get("enabled", True))
+            for task in tasks
+        )
+        if auto_update_enabled and not auto_check_enabled:
+            raise ValueError("Auto Update wymaga aktywnego zadania Auto Check Update")
+
+    def _task_response_payload(self, task: dict[str, Any]) -> dict[str, Any]:
+        return ScheduleTask.from_dict(task).to_dict()
+
+    def list_schedule_tasks(self) -> list[dict[str, Any]]:
+        state = self.state_store.read()
+        normalized = self._normalize_state_tasks(state.get("scheduled_tasks", []))
+        if normalized != state.get("scheduled_tasks", []):
+            self._persist_schedule_tasks(normalized)
+        return [self._task_response_payload(task) for task in normalized]
+
+    def create_schedule_task(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError("Payload zadania musi byc obiektem JSON")
+        state = self.state_store.read()
+        tasks = self._normalize_state_tasks(state.get("scheduled_tasks", []))
+        new_task = self._schedule_task_from_payload(payload)
+        if any(task.get("task_type") == new_task.task_type for task in tasks):
+            raise ValueError("Zadanie tego typu juz istnieje. Uzyj opcji edycji.")
+        new_task.next_run = (
+            to_iso(self.scheduler.compute_task_next(self._task_to_state_payload(new_task)))
+            if new_task.enabled
+            else None
+        )
+        tasks.append(self._task_to_state_payload(new_task))
+        self._validate_task_dependencies(tasks)
+        self._persist_schedule_tasks(tasks)
+        self._audit(
+            "schedule_task_created",
+            {
+                "task_id": new_task.task_id,
+                "task_type": new_task.task_type,
+                "enabled": new_task.enabled,
+            },
+        )
+        return self._task_response_payload(self._task_to_state_payload(new_task))
+
+    def update_schedule_task(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not task_id:
+            raise ValueError("Brak identyfikatora zadania")
+        if not isinstance(payload, dict):
+            raise ValueError("Payload zadania musi byc obiektem JSON")
+
+        state = self.state_store.read()
+        tasks = self._normalize_state_tasks(state.get("scheduled_tasks", []))
+        index = next((idx for idx, task in enumerate(tasks) if task.get("id") == task_id), -1)
+        if index < 0:
+            raise ValueError("Nie znaleziono zadania harmonogramu")
+
+        updated = self._schedule_task_from_payload(payload, existing=tasks[index])
+        updated.next_run = (
+            to_iso(self.scheduler.compute_task_next(self._task_to_state_payload(updated)))
+            if updated.enabled
+            else None
+        )
+        tasks[index] = self._task_to_state_payload(updated)
+        self._validate_task_dependencies(tasks)
+        self._persist_schedule_tasks(tasks)
+        self._audit(
+            "schedule_task_updated",
+            {
+                "task_id": updated.task_id,
+                "task_type": updated.task_type,
+                "enabled": updated.enabled,
+            },
+        )
+        return self._task_response_payload(self._task_to_state_payload(updated))
+
+    def set_schedule_task_enabled(self, task_id: str, enabled: Any) -> dict[str, Any]:
+        return self.update_schedule_task(task_id, {"enabled": enabled})
+
+    def _select_due_schedule_task(self, state: dict[str, Any]) -> dict[str, Any] | None:
+        raw_tasks = state.get("scheduled_tasks", [])
+        tasks = self._normalize_state_tasks(raw_tasks)
+        changed = tasks != raw_tasks
+        now = utc_now()
+        due: list[tuple[Any, dict[str, Any]]] = []
+
+        for task in tasks:
+            if not task.get("enabled", True):
+                if task.get("next_run") is not None:
+                    task["next_run"] = None
+                    changed = True
+                continue
+            next_run = parse_iso_datetime(task.get("next_run")) if task.get("next_run") else None
+            if next_run is None:
+                next_run = self.scheduler.compute_task_next(task, now)
+                task["next_run"] = to_iso(next_run) if next_run else None
+                changed = True
+            if next_run and next_run <= now:
+                due.append((next_run, task))
+
+        if changed:
+            self._persist_schedule_tasks(tasks)
+        if not due:
+            return None
+        due.sort(key=lambda item: item[0])
+        return due[0][1]
+
+    def _advance_schedule_task(self, task_id: str) -> None:
+        state = self.state_store.read()
+        tasks = self._normalize_state_tasks(state.get("scheduled_tasks", []))
+        changed = False
+        for task in tasks:
+            if task.get("id") != task_id:
+                continue
+            task["updated_at"] = utc_now().isoformat()
+            if task.get("enabled", True):
+                task["next_run"] = to_iso(self.scheduler.compute_task_next(task))
+            else:
+                task["next_run"] = None
+            changed = True
+            break
+        if changed:
+            self._persist_schedule_tasks(tasks)
+
     def _refresh_schedule(self) -> None:
         state = self.state_store.read()
+        normalized_tasks = self._normalize_state_tasks(state.get("scheduled_tasks", []))
+        if normalized_tasks:
+            self._persist_schedule_tasks(normalized_tasks)
+            self.state_store.set_schedule_signature(self._schedule_signature())
+            return
+
         signature = self._schedule_signature()
         if state.get("schedule_signature") != signature:
             self.logger.info("Schedule configuration changed, recalculating next runs")
@@ -728,11 +1148,17 @@ class AutoUpgradeService:
             )
 
     def status(self) -> dict[str, Any]:
+        state = self.state_store.read()
+        normalized_tasks = self._normalize_state_tasks(state.get("scheduled_tasks", []))
+        if normalized_tasks != state.get("scheduled_tasks", []):
+            self._persist_schedule_tasks(normalized_tasks)
+            state = self.state_store.read()
         return {
-            "state": self.state_store.read(),
+            "state": state,
             "recent_history": self.history_store.recent(20),
             "recent_logs": self.log_handler.recent(50),
             "config": self.config.to_options_dict(redact_secrets=True),
+            "scheduled_tasks": [self._task_response_payload(task) for task in normalized_tasks],
         }
 
     def health(self) -> dict[str, Any]:

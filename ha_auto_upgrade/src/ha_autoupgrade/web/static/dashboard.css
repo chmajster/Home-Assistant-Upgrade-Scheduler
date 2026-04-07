@@ -319,6 +319,11 @@ textarea {
   display: none;
 }
 
+.result-note.is-error {
+  border-color: var(--bad);
+  color: #ffd2d2;
+}
+
 .detail-grid > div {
   display: grid;
   gap: 8px;
@@ -427,6 +432,35 @@ tbody tr:last-child td {
 
 .log-info {
   border-left: 3px solid var(--accent);
+}
+
+.task-manager {
+  padding: 14px;
+  gap: 10px;
+}
+
+.task-manager .table {
+  margin-bottom: 0;
+  min-width: 780px;
+}
+
+.task-manager .table > :not(caption) > * > * {
+  border-bottom-color: var(--border);
+  background: transparent;
+  color: var(--text);
+}
+
+.task-manager .text-secondary {
+  color: var(--muted) !important;
+}
+
+.modal-content .form-check-input,
+.task-manager .form-check-input {
+  cursor: pointer;
+}
+
+.modal-content .alert {
+  margin-bottom: 0;
 }
 
 @media (max-width: 720px) {

@@ -14,6 +14,7 @@ from ha_autoupgrade.utils.dates import utc_now
 def _default_state() -> dict[str, Any]:
     return {
         "schema_version": STATE_SCHEMA_VERSION,
+        "scheduled_tasks": [],
         "last_check": None,
         "last_run": None,
         "last_backup": None,

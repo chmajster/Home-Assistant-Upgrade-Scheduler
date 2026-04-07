@@ -7,17 +7,15 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ha_autoupgrade.constants import (
     ALLOWED_DASHBOARD_IPS,
     ALLOWED_DASHBOARD_PREFIXES,
-    DEFAULT_WEEKDAYS,
     WEB_PORT,
 )
 from ha_autoupgrade.i18n import STRINGS
-from ha_autoupgrade.utils.dates import local_now, parse_iso_datetime
 
 
 class DashboardServer:
@@ -48,6 +46,17 @@ class DashboardServer:
     def _text(self, status: int, payload: str, content_type: str) -> tuple[int, str, bytes]:
         return (status, content_type, payload.encode("utf-8"))
 
+    def _decode_json_body(self, body: bytes) -> dict[str, Any]:
+        if not body:
+            return {}
+        try:
+            payload = json.loads(body.decode("utf-8") or "{}")
+        except json.JSONDecodeError as err:
+            raise ValueError("Invalid JSON payload") from err
+        if not isinstance(payload, dict):
+            raise ValueError("JSON payload must be an object")
+        return payload
+
     def _dashboard_css(self) -> str:
         css_path = self.static_root / "dashboard.css"
         try:
@@ -62,6 +71,7 @@ class DashboardServer:
         health = self.service.health()
         dashboard_css = self._dashboard_css()
         state = status["state"]
+        scheduled_tasks = status.get("scheduled_tasks", [])
         pending_rows = "".join(
             (
                 "<tr>"
@@ -111,9 +121,6 @@ class DashboardServer:
         safe_mode_until = state.get("safe_mode_until") or "off"
         last_backup = state.get("last_backup") or "n/a"
         next_install = state.get("next_install") or "n/a"
-        config = status.get("config", {})
-        install_days = str(config.get("install_days", "sun") or "sun")
-        install_hour = str(config.get("install_hour", "03:00") or "03:00")
         weekday_order = [
             ("mon", ui["day_mon"]),
             ("tue", ui["day_tue"]),
@@ -123,67 +130,113 @@ class DashboardServer:
             ("sat", ui["day_sat"]),
             ("sun", ui["day_sun"]),
         ]
-        selected_day_set = {token.strip().lower() for token in install_days.split(",") if token.strip()}
-        selected_days = [code for code, _label in weekday_order if code in selected_day_set] or ["sun"]
-        schedule_frequency = str(config.get("schedule_install_frequency", "") or "").lower()
-        if schedule_frequency not in {"daily", "weekly", "monthly", "once"}:
-            schedule_frequency = "daily" if selected_day_set == set(DEFAULT_WEEKDAYS) else "weekly"
-        schedule_range_end = str(config.get("schedule_install_time_range_end", "") or "")
-        schedule_monthday = int(config.get("schedule_install_monthday", 1) or 1)
-        once_at = parse_iso_datetime(str(config.get("schedule_install_once_at", "") or ""))
-        once_local = once_at.astimezone() if once_at else None
-        once_date = once_local.date().isoformat() if once_local else ""
-        once_time = once_local.strftime("%H:%M") if once_local else install_hour
-        schedule_time_value = once_time if schedule_frequency == "once" else install_hour
-        schedule_mode = "once" if schedule_frequency == "once" else "weekly" if schedule_frequency == "weekly" else "daily"
-        schedule_time_label = (
-            f"{schedule_time_value}-{schedule_range_end}"
-            if schedule_range_end and schedule_frequency != "once"
-            else schedule_time_value
+        schedule_summary_fallback = (
+          f"{ui.get('schedule_summary_weekly', 'Selected weekdays')} @ {next_install}"
+          if next_install != "n/a"
+          else ui.get("schedule_panel_hint", "Scheduled automation")
         )
-        if schedule_frequency == "daily":
-            install_schedule_label = f"{ui['schedule_summary_daily']} @ {schedule_time_label}"
-        elif schedule_frequency == "monthly":
-            install_schedule_label = (
-                f"{ui['schedule_summary_monthly']} {schedule_monthday} @ {schedule_time_label}"
-            )
-        elif schedule_frequency == "once" and once_local:
-            install_schedule_label = (
-                f"{ui['schedule_summary_once']} {once_local.date().isoformat()} {once_local.strftime('%H:%M')}"
-            )
-        else:
-            install_schedule_label = (
-                f"{ui['schedule_summary_weekly']}: "
-                f"{', '.join(label for code, label in weekday_order if code in selected_days)} @ {schedule_time_label}"
-            )
-        day_buttons = "".join(
-            (
-                f"<button type=\"button\" class=\"day-chip{' is-selected' if code in selected_days else ''}\" "
-                f"data-day=\"{code}\" aria-pressed=\"{'true' if code in selected_days else 'false'}\" "
-                f"onclick=\"toggleInstallDay('{code}', this)\">{escape(label)}</button>"
-            )
-            for code, label in weekday_order
+        install_schedule_label = schedule_summary_fallback
+        task_title = ui.get("task_section_title", "Harmonogram zadan" if language == "pl" else "Tasks")
+        task_hint = ui.get(
+          "task_section_hint",
+          "Tworz i zarzadzaj zadaniami Auto Update i Auto Check Update"
+          if language == "pl"
+          else "Create and manage Auto Update and Auto Check Update tasks",
         )
-        weekday_codes_json = json.dumps([code for code, _label in weekday_order])
-        selected_days_json = json.dumps(selected_days)
-        schedule_frequency_json = json.dumps(schedule_frequency)
-        schedule_range_end_json = json.dumps(schedule_range_end)
-        local_today_json = json.dumps(local_now().date().isoformat())
-        install_day_required_json = json.dumps(ui["install_day_required"])
-        install_hour_required_json = json.dumps(ui["install_hour_required"])
-        install_range_end_required_json = json.dumps(ui["install_range_end_required"])
-        install_month_day_required_json = json.dumps(ui["install_month_day_required"])
-        install_once_date_required_json = json.dumps(ui["install_once_date_required"])
-        install_once_future_required_json = json.dumps(ui["install_once_future_required"])
-        full_day_window_json = json.dumps("00:00-23:59")
-        schedule_frequency_once_hint_json = json.dumps(ui["schedule_frequency_once_hint"])
-        day_hints_json = json.dumps(
-            {
-                "daily": ui["schedule_days_hint_daily"],
-                "weekly": ui["schedule_days_hint_weekly"],
-                "monthly": ui["schedule_days_hint_monthly"],
-                "once": ui["schedule_days_hint_once"],
-            }
+        create_label = ui.get("task_create", "Utworz" if language == "pl" else "Create")
+        edit_label = ui.get("task_edit", "Edytuj" if language == "pl" else "Edit")
+        enabled_label = ui.get("task_enabled", "Wlaczone" if language == "pl" else "Enabled")
+        task_name_label = ui.get("task_name", "Nazwa zadania" if language == "pl" else "Task name")
+        task_category_label = ui.get("task_category", "Kategoria" if language == "pl" else "Category")
+        task_action_label = ui.get("task_action", "Akcja" if language == "pl" else "Action")
+        task_next_run_label = ui.get(
+          "task_next_run",
+          "Czas nastepnego uruchomienia" if language == "pl" else "Next run",
+        )
+        task_owner_label = ui.get("task_owner", "Wlasciciel" if language == "pl" else "Owner")
+        task_type_label = ui.get("task_type", "Typ zadania" if language == "pl" else "Task type")
+        task_days_label = ui.get("task_weekdays", "Dni tygodnia" if language == "pl" else "Weekdays")
+        task_hour_label = ui.get("task_hour", "Godzina" if language == "pl" else "Hour")
+        task_minute_label = ui.get("task_minute", "Minuta" if language == "pl" else "Minute")
+        save_label = ui.get("task_save", "Zapisz" if language == "pl" else "Save")
+        cancel_label = ui.get("task_cancel", "Anuluj" if language == "pl" else "Cancel")
+        no_tasks_label = ui.get(
+          "task_no_entries",
+          "Brak zadan harmonogramu" if language == "pl" else "No scheduled tasks",
+        )
+        validation_days_label = ui.get(
+          "task_validation_days",
+          "Wybierz co najmniej jeden dzien tygodnia"
+          if language == "pl"
+          else "Select at least one weekday",
+        )
+        created_success_label = ui.get(
+          "task_created",
+          "Zadanie zostalo zapisane" if language == "pl" else "Task saved",
+        )
+        updated_success_label = ui.get(
+          "task_updated",
+          "Zadanie zostalo zaktualizowane" if language == "pl" else "Task updated",
+        )
+        enabled_success_label = ui.get(
+          "task_enabled_updated",
+          "Stan zadania zostal zmieniony" if language == "pl" else "Task state updated",
+        )
+        modal_create_title = ui.get(
+          "task_modal_create_title",
+          "Utworz zadanie harmonogramu" if language == "pl" else "Create scheduled task",
+        )
+        modal_edit_title = ui.get(
+          "task_modal_edit_title",
+          "Edytuj zadanie harmonogramu" if language == "pl" else "Edit scheduled task",
+        )
+        task_type_options = [
+          {
+            "value": "auto_update",
+            "label": ui.get("task_type_auto_update", "Auto Update"),
+          },
+          {
+            "value": "auto_check_update",
+            "label": ui.get("task_type_auto_check_update", "Auto Check Update"),
+          },
+        ]
+        task_type_options_html = "".join(
+          f"<option value=\"{escape(entry['value'])}\">{escape(entry['label'])}</option>"
+          for entry in task_type_options
+        )
+        weekday_checkboxes = "".join(
+          (
+            "<div class=\"col-6 col-sm-4 col-md-3\">"
+            "<div class=\"form-check\">"
+            f"<input class=\"form-check-input weekday-checkbox\" type=\"checkbox\" value=\"{code}\" id=\"weekday-{code}\">"
+            f"<label class=\"form-check-label\" for=\"weekday-{code}\">{escape(label)}</label>"
+            "</div>"
+            "</div>"
+          )
+          for code, label in weekday_order
+        )
+        hour_options = "".join(
+          f"<option value=\"{hour:02d}\">{hour:02d}</option>" for hour in range(24)
+        )
+        minute_options = (
+          "<option value=\"\">--</option>"
+          + "".join(f"<option value=\"{minute:02d}\">{minute:02d}</option>" for minute in range(60))
+        )
+        weekday_order_json = json.dumps([code for code, _label in weekday_order])
+        weekday_labels_json = json.dumps({code: label for code, label in weekday_order})
+        task_data_json = json.dumps(scheduled_tasks)
+        task_ui_json = json.dumps(
+          {
+            "noTasks": no_tasks_label,
+            "validationDays": validation_days_label,
+            "created": created_success_label,
+            "updated": updated_success_label,
+            "enabledUpdated": enabled_success_label,
+            "createTitle": modal_create_title,
+            "editTitle": modal_edit_title,
+            "edit": edit_label,
+            "unknownError": "Wystapil blad" if language == "pl" else "Unexpected error",
+          }
         )
         advanced_actions_label = "Akcje zaawansowane" if language == "pl" else "Advanced actions"
 
@@ -193,6 +246,10 @@ class DashboardServer:
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{escape(ui['title'])}</title>
+      <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      >
     <style>
 {dashboard_css}
     </style>
@@ -258,88 +315,31 @@ class DashboardServer:
               </div>
             </div>
           </details>
-          <details class="section-toggle" open>
-            <summary>{escape(ui['schedule_panel_title'])}</summary>
-            <div class="toggle-body">
-              <p class="section-note">{escape(ui['schedule_panel_hint'])}</p>
-              <div class="schedule-box">
-                <div class="schedule-section">
-                  <div class="section-copy">
-                    <h5>{escape(ui['schedule_mode'])}</h5>
-                  </div>
-                  <div class="schedule-choice-group">
-                    <button
-                      type="button"
-                      id="mode-daily"
-                      class="schedule-choice{' is-selected' if schedule_mode == 'daily' else ''}"
-                      onclick="setScheduleMode('daily')"
-                    >{escape(ui['schedule_mode_daily'])}</button>
-                    <button
-                      type="button"
-                      id="mode-weekly"
-                      class="schedule-choice{' is-selected' if schedule_mode == 'weekly' else ''}"
-                      onclick="setScheduleMode('weekly')"
-                    >{escape(ui['schedule_mode_weekly'])}</button>
-                    <button
-                      type="button"
-                      id="mode-once"
-                      class="schedule-choice{' is-selected' if schedule_mode == 'once' else ''}"
-                      onclick="setScheduleMode('once')"
-                    >{escape(ui['schedule_mode_once'])}</button>
-                  </div>
-                </div>
-                <div class="schedule-section">
-                  <div class="section-copy">
-                    <h5>{escape(ui['schedule_days'])}</h5>
-                    <p id="schedule-days-hint"></p>
-                  </div>
-                  <div id="weekly-day-picker" class="day-toggle-group"{' hidden' if schedule_frequency != 'weekly' else ''}>{day_buttons}</div>
-                  <div id="monthly-day-field" class="field-group"{' hidden' if schedule_frequency != 'monthly' else ''}>
-                    <label for="schedule-monthday">{escape(ui['schedule_month_day'])}</label>
-                    <input id="schedule-monthday" type="number" min="1" max="31" value="{schedule_monthday}">
-                  </div>
-                  <div id="once-date-field" class="field-group"{' hidden' if schedule_frequency != 'once' else ''}>
-                    <label for="schedule-once-date">{escape(ui['schedule_once_date'])}</label>
-                    <input id="schedule-once-date" type="date" value="{escape(once_date)}">
-                  </div>
-                </div>
-                <div class="schedule-section">
-                  <div class="section-copy">
-                    <h5>{escape(ui['schedule_time'])}</h5>
-                    <p>{escape(ui['schedule_time_hint'])}</p>
-                  </div>
-                  <div class="schedule-choice-group compact">
-                    <button type="button" id="time-mode-point" class="schedule-choice" onclick="setTimeMode(false)">{escape(ui['schedule_exact_time'])}</button>
-                    <button type="button" id="time-mode-range" class="schedule-choice" onclick="setTimeMode(true)">{escape(ui['schedule_time_range'])}</button>
-                  </div>
-                  <div class="schedule-controls">
-                    <div class="field-group">
-                      <label for="install-hour">{escape(ui['install_time'])}</label>
-                      <input id="install-hour" type="time" value="{escape(schedule_time_value)}">
-                    </div>
-                    <div id="schedule-end-field" class="field-group"{' hidden' if not schedule_range_end or schedule_frequency == 'once' else ''}>
-                      <label for="schedule-end-time">{escape(ui['schedule_window_end'])}</label>
-                      <input id="schedule-end-time" type="time" value="{escape(schedule_range_end)}">
-                    </div>
-                  </div>
-                </div>
-                <div class="schedule-section">
-                  <div class="section-copy">
-                    <h5>{escape(ui['schedule_frequency'])}</h5>
-                    <p id="schedule-frequency-hint"></p>
-                  </div>
-                  <div class="schedule-choice-group">
-                    <button type="button" id="frequency-daily" class="schedule-choice" onclick="setScheduleFrequency('daily')">{escape(ui['schedule_frequency_daily'])}</button>
-                    <button type="button" id="frequency-weekly" class="schedule-choice" onclick="setScheduleFrequency('weekly')">{escape(ui['schedule_frequency_weekly'])}</button>
-                    <button type="button" id="frequency-monthly" class="schedule-choice" onclick="setScheduleFrequency('monthly')">{escape(ui['schedule_frequency_monthly'])}</button>
-                  </div>
-                </div>
-                <div class="schedule-actions">
-                  <button class="accent" onclick="saveInstallSchedule()">{escape(ui['save_install_schedule'])}</button>
-                </div>
+          <section class="task-manager card mb-0">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div>
+                <h3 class="mb-1">{escape(task_title)}</h3>
+                <p class="mb-0">{escape(task_hint)}</p>
               </div>
+              <button id="create-task-btn" type="button" class="btn btn-primary">{escape(create_label)}</button>
             </div>
-          </details>
+            <div class="table-wrap mt-3">
+              <table class="table table-dark table-hover align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>{escape(enabled_label)}</th>
+                    <th>{escape(task_name_label)}</th>
+                    <th>{escape(task_category_label)}</th>
+                    <th>{escape(task_action_label)}</th>
+                    <th>{escape(task_next_run_label)}</th>
+                    <th>{escape(task_owner_label)}</th>
+                    <th>{escape(edit_label)}</th>
+                  </tr>
+                </thead>
+                <tbody id="task-table-body"></tbody>
+              </table>
+            </div>
+          </section>
           <details class="section-toggle">
             <summary>{escape(ui['import_config'])}</summary>
             <div class="toggle-body">
@@ -396,7 +396,175 @@ class DashboardServer:
         </article>
       </section>
     </main>
+    <div class="modal fade" id="task-modal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-light border-secondary">
+          <form id="task-form">
+            <div class="modal-header border-secondary">
+              <h5 id="task-modal-title" class="modal-title">{escape(modal_create_title)}</h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div id="task-form-alert" class="alert alert-danger d-none" role="alert"></div>
+              <input id="task-id" type="hidden">
+              <div class="row g-3">
+                <div class="col-12">
+                  <label class="form-label" for="task-type">{escape(task_type_label)}</label>
+                  <select id="task-type" class="form-select" required>
+                    {task_type_options_html}
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label d-block mb-2">{escape(task_days_label)}</label>
+                  <div class="row g-2" id="weekday-group">
+                    {weekday_checkboxes}
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="task-hour">{escape(task_hour_label)}</label>
+                  <select id="task-hour" class="form-select" required>
+                    {hour_options}
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="task-minute">{escape(task_minute_label)}</label>
+                  <select id="task-minute" class="form-select">
+                    {minute_options}
+                  </select>
+                </div>
+                <div class="col-12">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="task-enabled" checked>
+                    <label class="form-check-label" for="task-enabled">{escape(enabled_label)}</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer border-secondary">
+              <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">{escape(cancel_label)}</button>
+              <button type="submit" class="btn btn-primary">{escape(save_label)}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+      const weekdayOrder = {weekday_order_json};
+      const weekdayLabels = {weekday_labels_json};
+      const uiText = {task_ui_json};
+      let taskList = {task_data_json};
+
+      const taskModalElement = document.getElementById('task-modal');
+      const taskModal = new bootstrap.Modal(taskModalElement);
+
+      function pad(value) {{
+        return String(value).padStart(2, '0');
+      }}
+
+      function escapeHtml(value) {{
+        return String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }}
+
+      function setFormAlert(message) {{
+        const alert = document.getElementById('task-form-alert');
+        if (!message) {{
+          alert.classList.add('d-none');
+          alert.textContent = '';
+          return;
+        }}
+        alert.classList.remove('d-none');
+        alert.textContent = message;
+      }}
+
+      function setActionResult(message, isError = false) {{
+        const output = document.getElementById('action-result');
+        output.textContent = message || '';
+        output.classList.toggle('is-error', isError);
+      }}
+
+      function formatWeekdays(days) {{
+        if (!Array.isArray(days) || !days.length) {{
+          return '-';
+        }}
+        return days.map((day) => weekdayLabels[day] || day).join(', ');
+      }}
+
+      function formatNextRun(value) {{
+        if (!value) {{
+          return '-';
+        }}
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {{
+          return value;
+        }}
+        return parsed.toLocaleString();
+      }}
+
+      function formatTaskSchedule(task) {{
+        const hour = pad(Number.parseInt(task.hour ?? 0, 10));
+        const minute = pad(Number.parseInt(task.minute ?? 0, 10));
+        return `${{formatWeekdays(task.weekdays)}} @ ${{hour}}:${{minute}}`;
+      }}
+
+      function sortedTasks(tasks) {{
+        const order = {{ auto_check_update: 0, auto_update: 1 }};
+        return [...tasks].sort((left, right) => {{
+          const orderLeft = order[left.task_type] ?? 99;
+          const orderRight = order[right.task_type] ?? 99;
+          if (orderLeft !== orderRight) {{
+            return orderLeft - orderRight;
+          }}
+          return String(left.id || '').localeCompare(String(right.id || ''));
+        }});
+      }}
+
+      function renderTaskRows() {{
+        const body = document.getElementById('task-table-body');
+        const tasks = sortedTasks(Array.isArray(taskList) ? taskList : []);
+        if (!tasks.length) {{
+          body.innerHTML = `<tr><td colspan="7" class="text-center text-secondary py-3">${{escapeHtml(uiText.noTasks)}}</td></tr>`;
+          return;
+        }}
+        body.innerHTML = tasks
+          .map((task) => {{
+            const schedule = formatTaskSchedule(task);
+            return `
+              <tr>
+                <td>
+                  <div class="form-check form-switch mb-0">
+                    <input
+                      class="form-check-input task-enabled-toggle"
+                      type="checkbox"
+                      data-task-id="${{escapeHtml(task.id)}}"
+                      ${{task.enabled ? 'checked' : ''}}
+                    >
+                  </div>
+                </td>
+                <td>${{escapeHtml(task.name || task.task_type)}}</td>
+                <td>${{escapeHtml(task.category || 'System')}}</td>
+                <td>
+                  <div>${{escapeHtml(task.action || '')}}</div>
+                  <div class="text-secondary small">${{escapeHtml(schedule)}}</div>
+                </td>
+                <td>${{escapeHtml(formatNextRun(task.next_run))}}</td>
+                <td>${{escapeHtml(task.owner || 'HA AutoUpgrade')}}</td>
+                <td>
+                  <button type="button" class="btn btn-sm btn-outline-light task-edit-btn" data-task-id="${{escapeHtml(task.id)}}">
+                    ${{escapeHtml(uiText.edit)}}
+                  </button>
+                </td>
+              </tr>
+            `;
+          }})
+          .join('');
+      }}
+
       const dashboardBaseUrl = (() => {{
         const current = new URL(window.location.href);
         if (!current.pathname.endsWith('/')) {{
@@ -407,182 +575,165 @@ class DashboardServer:
         return current;
       }})();
       function resolveDashboardUrl(path) {{
-        return new URL(path.replace(/^\/+/, ''), dashboardBaseUrl).toString();
+        return new URL(path.replace(/^\\/+/, ''), dashboardBaseUrl).toString();
       }}
-      async function postAction(url, body = null) {{
+
+      async function apiJson(url, method = 'GET', body = null) {{
         const response = await fetch(resolveDashboardUrl(url), {{
-          method: 'POST',
+          method,
           headers: {{ 'Content-Type': 'application/json' }},
           body: body ? JSON.stringify(body) : null
         }});
-        const result = await response.json();
-        document.getElementById('action-result').textContent = JSON.stringify(result, null, 2);
+        const payload = await response.json().catch(() => ({{}}));
+        if (!response.ok) {{
+          throw new Error(payload.error || uiText.unknownError);
+        }}
+        return payload;
+      }}
+
+      async function postAction(url, body = null) {{
+        const result = await apiJson(url, 'POST', body);
+        setActionResult(JSON.stringify(result, null, 2));
         setTimeout(() => window.location.reload(), 1500);
       }}
-      const installWeekdayOrder = {weekday_codes_json};
-      const scheduleDayHints = {day_hints_json};
-      const scheduleState = {{
-        frequency: {schedule_frequency_json},
-        selectedDays: new Set({selected_days_json}),
-        useRange: Boolean({schedule_range_end_json}) && {schedule_frequency_json} !== 'once'
-      }};
-      function activeScheduleMode() {{
-        if (scheduleState.frequency === 'once') {{
-          return 'once';
-        }}
-        if (scheduleState.frequency === 'weekly') {{
-          return 'weekly';
-        }}
-        return 'daily';
+
+      async function refreshTasks() {{
+        const payload = await apiJson('/api/tasks');
+        taskList = Array.isArray(payload.tasks) ? payload.tasks : [];
+        renderTaskRows();
       }}
-      function renderChoiceState(id, active) {{
-        const element = document.getElementById(id);
-        if (!element) {{
-          return;
-        }}
-        element.classList.toggle('is-selected', active);
-        element.setAttribute('aria-pressed', active ? 'true' : 'false');
-      }}
-      function syncDayButtons() {{
-        document.querySelectorAll('.day-chip').forEach((button) => {{
-          const day = button.dataset.day;
-          const selected = scheduleState.selectedDays.has(day);
-          button.classList.toggle('is-selected', selected);
-          button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+
+      function selectedWeekdays() {{
+        return weekdayOrder.filter((day) => {{
+          const checkbox = document.getElementById(`weekday-${{day}}`);
+          return checkbox && checkbox.checked;
         }});
       }}
-      function renderScheduleControls() {{
-        const mode = activeScheduleMode();
-        const isOnce = scheduleState.frequency === 'once';
-        renderChoiceState('mode-daily', mode === 'daily');
-        renderChoiceState('mode-weekly', mode === 'weekly');
-        renderChoiceState('mode-once', mode === 'once');
-        renderChoiceState('frequency-daily', scheduleState.frequency === 'daily');
-        renderChoiceState('frequency-weekly', scheduleState.frequency === 'weekly');
-        renderChoiceState('frequency-monthly', scheduleState.frequency === 'monthly');
-        renderChoiceState('time-mode-point', !scheduleState.useRange || isOnce);
-        renderChoiceState('time-mode-range', scheduleState.useRange && !isOnce);
-        document.getElementById('weekly-day-picker').hidden = scheduleState.frequency !== 'weekly';
-        document.getElementById('monthly-day-field').hidden = scheduleState.frequency !== 'monthly';
-        document.getElementById('once-date-field').hidden = !isOnce;
-        document.getElementById('schedule-end-field').hidden = !scheduleState.useRange || isOnce;
-        document.getElementById('schedule-days-hint').textContent = scheduleDayHints[scheduleState.frequency];
-        document.getElementById('schedule-frequency-hint').textContent = isOnce ? {schedule_frequency_once_hint_json} : '';
-        ['frequency-daily', 'frequency-weekly', 'frequency-monthly'].forEach((id) => {{
-          document.getElementById(id).disabled = isOnce;
-        }});
-        ['time-mode-point', 'time-mode-range'].forEach((id) => {{
-          document.getElementById(id).disabled = isOnce;
-        }});
-        document.getElementById('schedule-once-date').min = {local_today_json};
-        syncDayButtons();
-      }}
-      function setScheduleMode(mode) {{
-        if (mode === 'once') {{
-          scheduleState.frequency = 'once';
-          scheduleState.useRange = false;
-        }} else if (mode === 'weekly') {{
-          scheduleState.frequency = 'weekly';
-        }} else {{
-          scheduleState.frequency = 'daily';
-        }}
-        renderScheduleControls();
-      }}
-      function setScheduleFrequency(frequency) {{
-        scheduleState.frequency = frequency;
-        renderScheduleControls();
-      }}
-      function setTimeMode(useRange) {{
-        scheduleState.useRange = useRange;
-        renderScheduleControls();
-      }}
-      function toggleInstallDay(day, _element) {{
-        if (scheduleState.selectedDays.has(day)) {{
-          scheduleState.selectedDays.delete(day);
-        }} else {{
-          scheduleState.selectedDays.add(day);
-        }}
-        syncDayButtons();
-      }}
-      async function saveInstallSchedule() {{
-        const installHour = document.getElementById('install-hour').value;
-        if (!installHour) {{
-          document.getElementById('action-result').textContent = {install_hour_required_json};
-          return;
-        }}
-        if (scheduleState.frequency === 'weekly' && !scheduleState.selectedDays.size) {{
-          document.getElementById('action-result').textContent = {install_day_required_json};
-          return;
-        }}
-        const rangeEnd = document.getElementById('schedule-end-time').value;
-        if (scheduleState.useRange && scheduleState.frequency !== 'once' && !rangeEnd) {{
-          document.getElementById('action-result').textContent = {install_range_end_required_json};
-          return;
-        }}
-        const monthDay = Number.parseInt(document.getElementById('schedule-monthday').value || '0', 10);
-        if (scheduleState.frequency === 'monthly' && (!Number.isInteger(monthDay) || monthDay < 1 || monthDay > 31)) {{
-          document.getElementById('action-result').textContent = {install_month_day_required_json};
-          return;
-        }}
-        const onceDate = document.getElementById('schedule-once-date').value;
-        let onceAt = '';
-        if (scheduleState.frequency === 'once') {{
-          if (!onceDate) {{
-            document.getElementById('action-result').textContent = {install_once_date_required_json};
+
+      function fillTaskForm(task = null) {{
+        setFormAlert('');
+        document.getElementById('task-id').value = task?.id || '';
+        document.getElementById('task-type').value = task?.task_type || 'auto_check_update';
+        document.getElementById('task-hour').value = pad(Number.parseInt(task?.hour ?? 0, 10));
+        const minuteValue = Number.parseInt(task?.minute ?? 0, 10);
+        document.getElementById('task-minute').value = task ? pad(minuteValue) : '';
+        document.getElementById('task-enabled').checked = task ? Boolean(task.enabled) : true;
+
+        weekdayOrder.forEach((day) => {{
+          const checkbox = document.getElementById(`weekday-${{day}}`);
+          if (!checkbox) {{
             return;
           }}
-          const localDateTime = new Date(`${{onceDate}}T${{installHour}}:00`);
-          if (Number.isNaN(localDateTime.getTime()) || localDateTime <= new Date()) {{
-            document.getElementById('action-result').textContent = {install_once_future_required_json};
-            return;
-          }}
-          onceAt = localDateTime.toISOString();
-        }}
-        const orderedDays = installWeekdayOrder.filter((day) => scheduleState.selectedDays.has(day));
-        let installDays = orderedDays.join(',');
-        let allowedWeekdays = orderedDays;
-        if (scheduleState.frequency === 'daily' || scheduleState.frequency === 'monthly') {{
-          installDays = installWeekdayOrder.join(',');
-          allowedWeekdays = installWeekdayOrder;
-        }}
-        if (scheduleState.frequency === 'once') {{
-          const onceRun = new Date(`${{onceDate}}T12:00:00`);
-          installDays = installWeekdayOrder[(onceRun.getDay() + 6) % 7];
-          allowedWeekdays = installWeekdayOrder;
-        }}
-        const maintenanceWindow = scheduleState.useRange && scheduleState.frequency !== 'once'
-          ? `${{installHour}}-${{rangeEnd}}`
-          : {full_day_window_json};
-        await postAction('/api/actions/import', {{
-          options: {{
-            install_days: installDays,
-            install_hour: installHour,
-            maintenance_window: maintenanceWindow,
-            schedule_allowed_weekdays: allowedWeekdays,
-            schedule_install_cron: '',
-            schedule_install_frequency: scheduleState.frequency,
-            schedule_install_monthday: scheduleState.frequency === 'monthly' ? monthDay : 1,
-            schedule_install_once_at: onceAt,
-            schedule_install_time_range_end: scheduleState.useRange && scheduleState.frequency !== 'once' ? rangeEnd : ''
-          }}
+          checkbox.checked = task ? Array.isArray(task.weekdays) && task.weekdays.includes(day) : false;
         }});
+
+        if (!task) {{
+          const monday = document.getElementById('weekday-mon');
+          if (monday) {{
+            monday.checked = true;
+          }}
+        }}
+
+        document.getElementById('task-modal-title').textContent = task ? uiText.editTitle : uiText.createTitle;
       }}
-      renderScheduleControls();
+
+      function openTaskModal(task = null) {{
+        fillTaskForm(task);
+        taskModal.show();
+      }}
+
+      document.getElementById('create-task-btn').addEventListener('click', () => openTaskModal());
+
+      document.getElementById('task-form').addEventListener('submit', async (event) => {{
+        event.preventDefault();
+        const taskId = document.getElementById('task-id').value;
+        const weekdays = selectedWeekdays();
+        if (!weekdays.length) {{
+          setFormAlert(uiText.validationDays);
+          return;
+        }}
+        const minuteRaw = document.getElementById('task-minute').value;
+        const payload = {{
+          task_type: document.getElementById('task-type').value,
+          weekdays,
+          hour: Number.parseInt(document.getElementById('task-hour').value, 10),
+          minute: minuteRaw === '' ? 0 : Number.parseInt(minuteRaw, 10),
+          enabled: document.getElementById('task-enabled').checked
+        }};
+        try {{
+          const isEdit = Boolean(taskId);
+          const endpoint = isEdit
+            ? `/api/tasks/${{encodeURIComponent(taskId)}}`
+            : '/api/tasks';
+          const method = isEdit ? 'PUT' : 'POST';
+          const result = await apiJson(endpoint, method, payload);
+          taskList = Array.isArray(result.tasks) ? result.tasks : taskList;
+          renderTaskRows();
+          taskModal.hide();
+          setActionResult(isEdit ? uiText.updated : uiText.created);
+        }} catch (error) {{
+          setFormAlert(error.message || uiText.unknownError);
+        }}
+      }});
+
+      document.getElementById('task-table-body').addEventListener('click', (event) => {{
+        const button = event.target.closest('.task-edit-btn');
+        if (!button) {{
+          return;
+        }}
+        const taskId = button.getAttribute('data-task-id') || '';
+        const task = (Array.isArray(taskList) ? taskList : []).find((entry) => entry.id === taskId);
+        if (task) {{
+          openTaskModal(task);
+        }}
+      }});
+
+      document.getElementById('task-table-body').addEventListener('change', async (event) => {{
+        const toggle = event.target.closest('.task-enabled-toggle');
+        if (!toggle) {{
+          return;
+        }}
+        const taskId = toggle.getAttribute('data-task-id') || '';
+        const desiredState = toggle.checked;
+        try {{
+          const result = await apiJson(
+            `/api/tasks/${{encodeURIComponent(taskId)}}/enabled`,
+            'POST',
+            {{ enabled: desiredState }}
+          );
+          taskList = Array.isArray(result.tasks) ? result.tasks : taskList;
+          renderTaskRows();
+          setActionResult(uiText.enabledUpdated);
+        }} catch (error) {{
+          toggle.checked = !desiredState;
+          setActionResult(error.message || uiText.unknownError, true);
+        }}
+      }});
+
       async function importOptions() {{
         const raw = document.getElementById('import-options').value.trim();
         if (!raw) {{
-          document.getElementById('action-result').textContent = 'No JSON provided.';
+          setActionResult('No JSON provided.', true);
           return;
         }}
         let parsed;
         try {{
           parsed = JSON.parse(raw);
         }} catch (_error) {{
-          document.getElementById('action-result').textContent = 'Invalid JSON payload.';
+          setActionResult('Invalid JSON payload.', true);
           return;
         }}
-        await postAction('/api/actions/import', {{ options: parsed }});
+        try {{
+          const result = await apiJson('/api/actions/import', 'POST', {{ options: parsed }});
+          setActionResult(JSON.stringify(result, null, 2));
+          setTimeout(() => window.location.reload(), 1500);
+        }} catch (error) {{
+          setActionResult(error.message || uiText.unknownError, true);
+        }}
       }}
+
+      renderTaskRows();
+      refreshTasks().catch((error) => setActionResult(error.message || uiText.unknownError, true));
     </script>
   </body>
 </html>"""
@@ -611,8 +762,55 @@ class DashboardServer:
             return self._json(200, self.service.health())
         if method == "GET" and parsed.path == "/api/history":
             return self._json(200, self.service.status()["recent_history"])
+        if method == "GET" and parsed.path == "/api/tasks":
+          return self._json(200, {"tasks": self.service.list_schedule_tasks()})
         if method == "GET" and parsed.path == "/static/dashboard.css":
             return self._text(200, self._dashboard_css(), "text/css; charset=utf-8")
+
+        task_path = [part for part in parsed.path.split("/") if part]
+        if task_path[:2] == ["api", "tasks"]:
+          try:
+            if method == "POST" and parsed.path == "/api/tasks":
+              payload = self._decode_json_body(body)
+              created = self.service.create_schedule_task(payload)
+              return self._json(
+                201,
+                {
+                  "status": "created",
+                  "task": created,
+                  "tasks": self.service.list_schedule_tasks(),
+                },
+              )
+
+            if len(task_path) == 3 and method == "PUT":
+              task_id = unquote(task_path[2])
+              payload = self._decode_json_body(body)
+              updated = self.service.update_schedule_task(task_id, payload)
+              return self._json(
+                200,
+                {
+                  "status": "updated",
+                  "task": updated,
+                  "tasks": self.service.list_schedule_tasks(),
+                },
+              )
+
+            if len(task_path) == 4 and task_path[3] == "enabled" and method == "POST":
+              task_id = unquote(task_path[2])
+              payload = self._decode_json_body(body)
+              if "enabled" not in payload:
+                raise ValueError("Missing enabled value")
+              updated = self.service.set_schedule_task_enabled(task_id, payload["enabled"])
+              return self._json(
+                200,
+                {
+                  "status": "updated",
+                  "task": updated,
+                  "tasks": self.service.list_schedule_tasks(),
+                },
+              )
+          except ValueError as err:
+            return self._json(400, {"status": "error", "error": str(err)})
 
         if method == "POST" and parsed.path == "/api/actions/check":
             self.service.enqueue_action("check", "dashboard")
@@ -649,8 +847,11 @@ class DashboardServer:
         if method == "POST" and parsed.path == "/api/actions/self-test":
             return self._json(200, self.service.self_test())
         if method == "POST" and parsed.path == "/api/actions/import":
-            payload = json.loads(body.decode("utf-8") or "{}")
-            return self._json(200, self.service.import_configuration(payload))
+            try:
+                payload = self._decode_json_body(body)
+                return self._json(200, self.service.import_configuration(payload))
+            except ValueError as err:
+                return self._json(400, {"status": "error", "error": str(err)})
         if method == "POST" and parsed.path == "/api/webhook/trigger":
             configured = self.service.config.webhook_trigger_token
             provided = (query.get("token") or [""])[0]
@@ -686,6 +887,22 @@ class DashboardServer:
                 body = self.rfile.read(length) if length else b""
                 status, content_type, payload = server.handle_request(
                     method="POST",
+                    raw_path=self.path,
+                    body=body,
+                    headers={key: value for key, value in self.headers.items()},
+                    remote_addr=self.client_address[0],
+                )
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def do_PUT(self) -> None:  # noqa: N802
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length) if length else b""
+                status, content_type, payload = server.handle_request(
+                    method="PUT",
                     raw_path=self.path,
                     body=body,
                     headers={key: value for key, value in self.headers.items()},

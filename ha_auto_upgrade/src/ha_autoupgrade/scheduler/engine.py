@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from ha_autoupgrade.config import AppConfig
 from ha_autoupgrade.constants import DEFAULT_WEEKDAYS
@@ -85,3 +86,36 @@ class SchedulerEngine:
         if schedule.next_install and schedule.next_install <= current:
             due.append("install")
         return due
+
+    def compute_task_next(
+        self,
+        task: dict[str, Any],
+        now: datetime | None = None,
+    ) -> datetime | None:
+        if not task.get("enabled", True):
+            return None
+        raw_weekdays = task.get("weekdays") or []
+        weekdays = tuple(
+            str(day).strip().lower() for day in raw_weekdays if str(day).strip().lower() in DEFAULT_WEEKDAYS
+        )
+        if not weekdays:
+            return None
+        hour = int(task.get("hour", 0))
+        minute = int(task.get("minute", 0))
+        trigger = WeekdaySetTimeTrigger(weekdays, f"{hour:02d}:{minute:02d}")
+        current = now or utc_now()
+        seed = f"task:{task.get('id', '')}:{current.date().isoformat()}:{self.config.staged_rollout_seed}"
+        return trigger.next_after(
+            current,
+            seed=seed,
+            jitter_seconds=self.config.schedule_jitter_seconds,
+        )
+
+    def task_is_due(self, task: dict[str, Any], now: datetime | None = None) -> bool:
+        if not task.get("enabled", True):
+            return False
+        next_run = parse_iso_datetime(task.get("next_run")) if task.get("next_run") else None
+        current = now or utc_now()
+        if next_run is None:
+            next_run = self.compute_task_next(task, current)
+        return bool(next_run and next_run <= current)

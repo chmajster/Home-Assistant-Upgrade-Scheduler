@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.17
+
+- version bump from 1.0.16 to 1.0.17
+
 ## 1.0.16
 
 - simplified the dashboard layout to a plain single-flow view with basic actions at the top
